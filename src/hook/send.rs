@@ -74,8 +74,14 @@ fn build_payload(v: &Value) -> String {
         (Some(tool_use_id), false) => format!("{session_id}:{tool_use_id}"),
         _ => agent_id.clone(),
     };
-    // The transcript backs intent resolution in the daemon.
+    // The transcript backs intent resolution in the daemon; is_error marks
+    // failed tool calls, which the daemon counts instead of enriching.
     let transcript_path = v.get("transcript_path").and_then(|x| x.as_str());
+    let is_error = v
+        .get("tool_response")
+        .and_then(|r| r.get("is_error"))
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
     json!({
         "type": "hook",
         "agent_id": agent_id,
@@ -83,6 +89,7 @@ fn build_payload(v: &Value) -> String {
         "tool_name": tool_name,
         "file": file,
         "transcript_path": transcript_path,
+        "is_error": is_error,
     })
     .to_string()
 }

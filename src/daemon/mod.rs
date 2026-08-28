@@ -28,6 +28,27 @@ fn pid_path(project_path: &std::path::Path) -> PathBuf {
     project_path.join(".aitrace").join("daemon.pid")
 }
 
+/// Point tracing at `<project>/.aitrace/daemon.log` (append, DEBUG level).
+///
+/// Best effort: a logging failure must never stop the recorder.
+fn init_logging(vt_dir: &std::path::Path) -> Result<()> {
+    let log_path = vt_dir.join("daemon.log");
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .with_context(|| format!("open {:?}", log_path))?;
+    tracing_subscriber::fmt()
+        .with_writer(std::sync::Arc::new(file))
+        .with_ansi(false)
+        .with_max_level(tracing::Level::DEBUG)
+        .with_target(false)
+        .try_init()
+        .map_err(|e| anyhow::anyhow!("init tracing: {e}"))?;
+    tracing::info!("daemon logging to {}", log_path.display());
+    Ok(())
+}
+
 fn sock_path(project_path: &std::path::Path) -> PathBuf {
     project_path.join(".aitrace").join("daemon.sock")
 }
@@ -47,9 +68,14 @@ pub fn run_daemon(project_path: PathBuf, config: Config) -> Result<()> {
         tracing::warn!("project bin install: {e}");
     }
 
+    // Per-session debug log next to edits.jsonl: the daemon child has no
+    // console, so without this it runs silent and debugging tests means
+    // dissecting raw JSON dumps.
+    let _ = init_logging(&vt_dir);
+
     // 1. Create a new session.
     let sessions_dir = vt_dir.join("sessions");
-    let session_mgr = SessionManager::new(sessions_dir);
+    let session_mgr = SessionManager::new(sessions_dir.clone());
     let session = session_mgr.create()?;
 
     let pid_file = pid_path(&project_path);
@@ -59,9 +85,36 @@ pub fn run_daemon(project_path: PathBuf, config: Config) -> Result<()> {
     // 2. Write PID file so the parent process (and future CLI commands) can
     //    discover this daemon.
     pid::write_pid_file(&pid_file, my_pid, &session.id)?;
+    tracing::info!("daemon session {} starting (pid {my_pid})", session.id);
 
-    // 3. Create the recorder.
-    let recorder = Recorder::new(project_path.clone(), session.dir.clone());
+    // 3. Create the recorder, inheriting the baseline from the previous
+    //    session so already-known files are `modify` (not `create`) after a
+    //    daemon restart and their prior content stays diffable.
+    let prev_session_dir = {
+        let mut dirs: Vec<std::path::PathBuf> = std::fs::read_dir(&sessions_dir)
+            .map(|rd| {
+                rd.filter_map(|e| e.ok())
+                    .map(|e| e.path())
+                    .filter(|p| {
+                        p.is_dir()
+                            && p.file_name().and_then(|n| n.to_str()) != Some(session.id.as_str())
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        dirs.sort();
+        dirs.pop()
+    };
+    let recorder = Recorder::with_baseline(
+        project_path.clone(),
+        session.dir.clone(),
+        prev_session_dir.as_deref(),
+    );
+    tracing::info!(
+        "baseline: {} known files inherited from {:?}",
+        recorder.current_file_hashes().len(),
+        prev_session_dir
+    );
 
     // 4. Start file watcher.
     let (fs_tx, fs_rx) = mpsc::channel::<PathBuf>();
@@ -96,6 +149,9 @@ pub fn run_daemon(project_path: PathBuf, config: Config) -> Result<()> {
     let mut correlator = Correlator::new();
     let mut agent_registry = AgentRegistry::new();
     let mut intent_index = intent_index::IntentIndex::new();
+    // Edits recorded with a missing operation intent, awaiting a transcript
+    // parent that lands late (Claude Code writes assistant entries lazily).
+    let mut intent_backfill: Vec<crate::event::EditEvent> = Vec::new();
 
     // Channel for sending EditEvents (Recorder requires one, but the daemon
     // doesn't consume them through the channel -- it uses them inline).
@@ -136,6 +192,48 @@ pub fn run_daemon(project_path: PathBuf, config: Config) -> Result<()> {
             break;
         }
 
+        // 7a'. Intent backfill pass: transcript refreshes during the socket
+        // drain may have resolved intents for edits that were recorded
+        // before their parent text landed. Corrected copies are appended;
+        // read_all deduplicates by id keeping the last record.
+        if !intent_backfill.is_empty() {
+            let mut still_pending = Vec::new();
+            for mut ev in intent_backfill.drain(..) {
+                let mut resolved = false;
+                if let Some(op) = ev.operation_id.as_deref() {
+                    if let Some(tool_use_id) = intent_index::tool_use_id_from_operation(op) {
+                        if let Some(intent) = intent_index.operation_intent(tool_use_id) {
+                            ev.operation_intent = Some(intent);
+                            if ev.intent.is_none() {
+                                ev.intent = intent_index.user_prompt();
+                            }
+                            resolved = recorder.append_correction(&ev).is_ok();
+                            if resolved {
+                                tracing::info!(
+                                    "backfill: edit #{} {} intent={:?}",
+                                    ev.id,
+                                    ev.file,
+                                    ev.operation_intent
+                                        .as_deref()
+                                        .map(|s| &s[..s.len().min(60)])
+                                );
+                            }
+                        }
+                    }
+                }
+                if !resolved {
+                    still_pending.push(ev);
+                }
+            }
+            intent_backfill = still_pending;
+            // Bound the queue: entries whose parents never land age out.
+            if intent_backfill.len() > 32 {
+                let drop_n = intent_backfill.len() - 32;
+                tracing::debug!("backfill queue over cap, aging out {drop_n} entries");
+                intent_backfill.drain(0..drop_n);
+            }
+        }
+
         // 7b. Drain file changes.
         while let Ok(abs_path) = fs_rx.try_recv() {
             // Compute relative path for correlation lookup.
@@ -160,6 +258,7 @@ pub fn run_daemon(project_path: PathBuf, config: Config) -> Result<()> {
                     // disk, so the hook message is frequently still in flight
                     // when the watcher event arrives. Wait briefly for it
                     // instead of recording the edit without enrichment.
+                    tracing::debug!("watcher event for {rel_path}: no hook yet, entering grace");
                     let deadline = std::time::Instant::now() + HOOK_GRACE;
                     while std::time::Instant::now() < deadline {
                         {
@@ -188,12 +287,33 @@ pub fn run_daemon(project_path: PathBuf, config: Config) -> Result<()> {
                         }
                         std::thread::sleep(Duration::from_millis(20));
                     }
+                    if hook.is_some() {
+                        tracing::debug!("watcher event for {rel_path}: hook arrived in grace");
+                    } else {
+                        tracing::debug!("watcher event for {rel_path}: grace expired hookless");
+                    }
                 }
                 if should_stop {
                     // Daemon is shutting down; drop this event.
                     break;
                 }
-                hook.map(|hook| {
+                hook.map(|mut hook| {
+                    // Final refresh: the transcript parent may have landed
+                    // during the grace window. Lookups walk live, so this
+                    // resolves intents the hook-time refresh could not.
+                    if let Some(tp) = hook.transcript_path.as_deref() {
+                        intent_index.refresh(std::path::Path::new(tp));
+                        if hook.intent.is_none() {
+                            if let Some(tool_use_id) =
+                                intent_index::tool_use_id_from_operation(&hook.operation_id)
+                            {
+                                hook.intent = intent_index.operation_intent(tool_use_id);
+                            }
+                        }
+                        if hook.user_intent.is_none() {
+                            hook.user_intent = intent_index.user_prompt();
+                        }
+                    }
                     let label = agent_registry
                         .get(&hook.agent_id)
                         .map(|info| info.agent_label.clone());
@@ -212,12 +332,40 @@ pub fn run_daemon(project_path: PathBuf, config: Config) -> Result<()> {
             match recorder.process_file_change(&abs_path, &event_tx, enrichment.as_ref()) {
                 Ok(Some(result)) => {
                     edit_count += 1;
+                    tracing::info!(
+                        "edit #{} {:?} {} +{}/-{} op={:?} intent={:?}{}",
+                        result.event.id,
+                        result.event.kind,
+                        result.event.file,
+                        result.event.lines_added,
+                        result.event.lines_removed,
+                        result.event.operation_id,
+                        result
+                            .event
+                            .operation_intent
+                            .as_deref()
+                            .map(|s| &s[..s.len().min(60)]),
+                        if result.event.operation_id.is_some()
+                            && result.event.operation_intent.is_none()
+                        {
+                            " (queued for backfill)"
+                        } else {
+                            ""
+                        }
+                    );
                     // Increment agent edit count if enrichment came from a hook.
                     if let Some(ref enrich) = enrichment {
                         if let Some(ref agent_id) = enrich.agent_id {
                             let ts = Utc::now().timestamp_millis();
                             agent_registry.increment_edit_count(agent_id, ts);
                         }
+                    }
+                    // Still-missing operation intent: the transcript parent
+                    // may land late; queue for the backfill pass.
+                    if result.event.operation_id.is_some()
+                        && result.event.operation_intent.is_none()
+                    {
+                        intent_backfill.push(result.event.clone());
                     }
 
                     // Broadcast to subscribers.
@@ -305,6 +453,25 @@ fn handle_socket_message(
             state
                 .agent_registry
                 .register_or_update(&payload.agent_id, "claude-code", ts);
+            if payload.is_error {
+                // Failed tool call: no file change will follow, so count it
+                // instead of queueing an enrichment that would never match.
+                state
+                    .agent_registry
+                    .increment_failed_attempts(&payload.agent_id, ts);
+                tracing::debug!(
+                    "hook failed tool call: agent {} op {} tool {} ({} total failures)",
+                    payload.agent_id,
+                    payload.operation_id,
+                    payload.tool_name,
+                    state
+                        .agent_registry
+                        .get(&payload.agent_id)
+                        .map(|i| i.failed_attempts)
+                        .unwrap_or(0)
+                );
+                return false;
+            }
             // Resolve intents from the transcript: the tool-use entry is
             // written before the tool runs, so the index sees it by now.
             if let Some(tp) = payload.transcript_path.as_deref() {
@@ -320,6 +487,17 @@ fn handle_socket_message(
                     payload.user_intent = state.intent_index.user_prompt();
                 }
             }
+            tracing::debug!(
+                "hook: agent {} op {} file {} intent={:?} user={:?}",
+                payload.agent_id,
+                payload.operation_id,
+                file,
+                payload.intent.as_deref().map(|s| &s[..s.len().min(60)]),
+                payload
+                    .user_intent
+                    .as_deref()
+                    .map(|s| &s[..s.len().min(40)])
+            );
             // Push enrichment for correlation. Hooks report absolute
             // paths while watcher events are project-relative, so both
             // sides are normalized to the same canonical key.
@@ -372,7 +550,10 @@ fn handle_socket_message(
             }
         }
 
-        SocketMessage::Stop => return true,
+        SocketMessage::Stop => {
+            tracing::info!("stop requested");
+            return true;
+        }
     }
     false
 }

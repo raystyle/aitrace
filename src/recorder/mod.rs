@@ -40,6 +40,9 @@ pub struct Recorder {
     /// Absolute path to the project root (used to compute relative paths).
     pub project_root: PathBuf,
     snapshot_store: SnapshotStore,
+    /// Snapshot store of the previous session, used to resolve baselines
+    /// inherited across daemon restarts.
+    baseline_store: Option<SnapshotStore>,
     edit_log: EditLog,
     file_hashes: HashMap<String, String>,
     edit_id_counter: u64,
@@ -55,10 +58,58 @@ impl Recorder {
         Self {
             project_root,
             snapshot_store: SnapshotStore::new(session_dir.join("snapshots")),
+            baseline_store: None,
             edit_log: EditLog::new(session_dir.join("edits.jsonl")),
             file_hashes: HashMap::new(),
             edit_id_counter: 1,
         }
+    }
+
+    /// Create a recorder that inherits its baseline from a previous
+    /// session: known files keep their kind (`modify`, not `create`) and
+    /// their previous content is retrievable for diffs.
+    pub fn with_baseline(
+        project_root: PathBuf,
+        session_dir: PathBuf,
+        prev_session_dir: Option<&Path>,
+    ) -> Self {
+        let mut recorder = Self::new(project_root, session_dir);
+        let Some(prev) = prev_session_dir else {
+            return recorder;
+        };
+        let prev_log = prev.join("edits.jsonl");
+        if prev_log.exists() {
+            if let Ok(events) = crate::snapshot::edit_log::EditLog::read_all(&prev_log) {
+                for event in events {
+                    // Later records (corrections) already replace earlier
+                    // ones in read_all, so iterating in order ends with the
+                    // newest hash per file.
+                    recorder
+                        .file_hashes
+                        .insert(event.file.clone(), event.after_hash.clone());
+                }
+            }
+        }
+        let prev_snaps = prev.join("snapshots");
+        if prev_snaps.is_dir() {
+            recorder.baseline_store = Some(SnapshotStore::new(prev_snaps));
+        }
+        recorder
+    }
+
+    /// Append a corrected copy of an already-recorded event (e.g. an intent
+    /// backfill). Consumers deduplicate by id, keeping the last record.
+    pub fn append_correction(&self, event: &EditEvent) -> Result<()> {
+        self.edit_log.append(event)
+    }
+
+    /// Retrieve baseline content from the previous session's snapshot store.
+    fn baseline_content(&self, hash: &str) -> Option<String> {
+        let store = self.baseline_store.as_ref()?;
+        store
+            .retrieve(hash)
+            .ok()
+            .and_then(|b| String::from_utf8(b).ok())
     }
 
     /// Process a file-system change at `abs_path`.
@@ -95,11 +146,13 @@ impl Recorder {
         let new_content = std::fs::read_to_string(abs_path).unwrap_or_default();
 
         // 3. Look up old content from snapshot store (empty if first edit).
+        // Inherited baselines live in the previous session's store.
         let old_content = if let Some(hash) = self.file_hashes.get(&rel_path) {
             self.snapshot_store
                 .retrieve(hash)
                 .ok()
                 .and_then(|b| String::from_utf8(b).ok())
+                .or_else(|| self.baseline_content(hash))
                 .unwrap_or_default()
         } else {
             String::new()

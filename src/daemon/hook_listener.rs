@@ -134,6 +134,10 @@ fn parse_message(json_str: &str, stream: Option<UnixStream>) -> Result<SocketMes
                 .get("transcript_path")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
+            let is_error = value
+                .get("is_error")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
 
             Ok(SocketMessage::Hook(
                 HookPayload {
@@ -143,6 +147,7 @@ fn parse_message(json_str: &str, stream: Option<UnixStream>) -> Result<SocketMes
                     intent,
                     user_intent,
                     transcript_path,
+                    is_error,
                 },
                 file,
             ))

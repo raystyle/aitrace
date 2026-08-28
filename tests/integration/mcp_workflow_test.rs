@@ -89,6 +89,7 @@ fn create_realistic_session(sessions_dir: &Path) {
             first_seen: 1_700_000_000_000,
             last_seen: 1_700_000_003_000,
             edit_count: 3,
+            failed_attempts: 0,
         }],
     };
     std::fs::write(

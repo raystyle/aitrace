@@ -3,9 +3,12 @@
 //! Claude Code's PostToolUse payload carries no "why" for an edit, but the
 //! session transcript (`transcript_path`) holds it: every `tool_use` block is
 //! preceded up the `parentUuid` chain by the assistant's declared text (or
-//! thinking), and `last-prompt` entries carry the user's request. Those lines
-//! are written *before* the tool runs, so the intent is always available by
-//! the time the hook fires.
+//! thinking), and user prompts arrive both as user text entries and
+//! `last-prompt` markers. Those lines are written *before* the tool runs --
+//! but not always in tree order: assistant parent text can land in the file
+//! several seconds *after* its tool_use line (lazy writes). Lookups therefore
+//! walk the parent chain live at query time instead of resolving once at
+//! absorb time, so late-arriving ancestors are found by the next refresh.
 //!
 //! The index tails the transcript file incrementally: each refresh reads only
 //! the lines appended since the last one (a trailing partial line is left for
@@ -41,7 +44,9 @@ enum EntryKind {
     /// Assistant entry that is itself a tool call (skipped during the walk,
     /// so a batch of parallel tool calls shares the one preceding text).
     ToolUse,
-    /// user / tool_result / attachment / system / anything else: the walk
+    /// A real user text entry: a prompt source that never lags.
+    UserText(String),
+    /// tool_result wrappers / attachments / system / anything else: the walk
     /// boundary.
     Other,
 }
@@ -55,7 +60,8 @@ struct IndexedEntry {
 /// Tracks one transcript file and answers intent lookups.
 pub struct IntentIndex {
     entries: HashMap<String, IndexedEntry>,
-    tool_intents: HashMap<String, String>,
+    /// tool_use_id → uuid of the entry that carries the tool_use block.
+    tool_use_entries: HashMap<String, String>,
     user_prompt: Option<String>,
     /// Transcript being tailed and the byte offset already consumed.
     source: Option<(PathBuf, u64)>,
@@ -71,18 +77,26 @@ impl IntentIndex {
     pub fn new() -> Self {
         Self {
             entries: HashMap::new(),
-            tool_intents: HashMap::new(),
+            tool_use_entries: HashMap::new(),
             user_prompt: None,
             source: None,
         }
     }
 
     /// Operation intent (assistant text, else thinking) for a tool-use id.
+    ///
+    /// Walks the parent chain at query time, so an ancestor appended after
+    /// the tool_use line is picked up by the next refresh + query.
     pub fn operation_intent(&self, tool_use_id: &str) -> Option<String> {
-        self.tool_intents.get(tool_use_id).cloned()
+        let uuid = self.tool_use_entries.get(tool_use_id)?;
+        self.intent_for_entry(uuid)
     }
 
     /// The most recent user prompt seen in the transcript.
+    ///
+    /// Fed by both `last-prompt` markers and real user text entries --
+    /// whichever appears later in the file wins, because the marker alone
+    /// can lag a turn behind.
     pub fn user_prompt(&self) -> Option<String> {
         self.user_prompt.clone()
     }
@@ -95,7 +109,7 @@ impl IntentIndex {
         let need_reset = self.source.as_ref().is_none_or(|(p, _)| p != path);
         if need_reset {
             self.entries.clear();
-            self.tool_intents.clear();
+            self.tool_use_entries.clear();
             self.user_prompt = None;
             self.source = Some((path.to_path_buf(), 0));
         }
@@ -131,6 +145,12 @@ impl IntentIndex {
         if let Some((_, o)) = &mut self.source {
             *o = offset;
         }
+        tracing::debug!(
+            "transcript refresh: {} entries, {} tool ids, prompt={:?}",
+            self.entries.len(),
+            self.tool_use_entries.len(),
+            self.user_prompt.as_deref().map(|s| &s[..s.len().min(40)])
+        );
     }
 
     fn absorb_line(&mut self, line: &str) {
@@ -153,71 +173,91 @@ impl IntentIndex {
             .get("parentUuid")
             .and_then(|u| u.as_str())
             .map(|s| s.to_string());
+        let entry_type = v.get("type").and_then(|t| t.as_str());
 
-        let kind = if v.get("type").and_then(|t| t.as_str()) == Some("assistant") {
-            let mut text = None;
-            let mut thinking = None;
-            let mut has_tool_use = false;
-            if let Some(blocks) = v
-                .get("message")
-                .and_then(|m| m.get("content"))
-                .and_then(|c| c.as_array())
-            {
-                for block in blocks {
-                    match block.get("type").and_then(|t| t.as_str()) {
-                        Some("text") => {
-                            if text.is_none() {
-                                text = block
-                                    .get("text")
-                                    .and_then(|t| t.as_str())
-                                    .filter(|t| !t.trim().is_empty());
-                            }
-                        }
-                        Some("thinking") => {
-                            if thinking.is_none() {
-                                thinking = block
-                                    .get("thinking")
-                                    .and_then(|t| t.as_str())
-                                    .filter(|t| !t.trim().is_empty());
-                            }
-                        }
-                        Some("tool_use") => has_tool_use = true,
-                        _ => {}
-                    }
-                }
-            }
-            match (text, thinking) {
-                (Some(t), _) => EntryKind::AssistantText(snippet(t)),
-                (None, Some(th)) => EntryKind::AssistantThinking(snippet(th)),
-                (None, None) if has_tool_use => EntryKind::ToolUse,
-                (None, None) => EntryKind::Other,
-            }
+        let kind = if entry_type == Some("assistant") {
+            Self::assistant_kind(&v, uuid, &mut self.tool_use_entries)
+        } else if entry_type == Some("user") {
+            Self::user_kind(&v)
         } else {
             EntryKind::Other
         };
 
+        if let EntryKind::UserText(p) = &kind {
+            self.user_prompt = Some(p.clone());
+        }
+
         self.entries
             .insert(uuid.to_string(), IndexedEntry { parent_uuid, kind });
+    }
 
-        // Resolve intents for tool-use blocks in this entry right away: the
-        // parent chain is complete by now (parents are always written first),
-        // and the entry itself must already be indexed for the walk start.
-        if v.get("type").and_then(|t| t.as_str()) == Some("assistant") {
-            if let Some(blocks) = v
-                .get("message")
-                .and_then(|m| m.get("content"))
-                .and_then(|c| c.as_array())
-            {
-                for block in blocks {
-                    if block.get("type").and_then(|t| t.as_str()) == Some("tool_use") {
-                        if let Some(id) = block.get("id").and_then(|i| i.as_str()) {
-                            if let Some(intent) = self.intent_for_entry(uuid) {
-                                self.tool_intents.insert(id.to_string(), intent);
-                            }
-                        }
+    fn assistant_kind(
+        v: &serde_json::Value,
+        uuid: &str,
+        tool_use_entries: &mut HashMap<String, String>,
+    ) -> EntryKind {
+        let mut text = None;
+        let mut thinking = None;
+        let mut has_tool_use = false;
+        let Some(blocks) = content_blocks(v) else {
+            return EntryKind::Other;
+        };
+        for block in blocks {
+            match block.get("type").and_then(|t| t.as_str()) {
+                Some("text") => {
+                    if text.is_none() {
+                        text = block
+                            .get("text")
+                            .and_then(|t| t.as_str())
+                            .filter(|t| !t.trim().is_empty());
                     }
                 }
+                Some("thinking") => {
+                    if thinking.is_none() {
+                        thinking = block
+                            .get("thinking")
+                            .and_then(|t| t.as_str())
+                            .filter(|t| !t.trim().is_empty());
+                    }
+                }
+                Some("tool_use") => {
+                    has_tool_use = true;
+                    if let Some(id) = block.get("id").and_then(|i| i.as_str()) {
+                        tool_use_entries.insert(id.to_string(), uuid.to_string());
+                    }
+                }
+                _ => {}
             }
+        }
+        match (text, thinking) {
+            (Some(t), _) => EntryKind::AssistantText(snippet(t)),
+            (None, Some(th)) => EntryKind::AssistantThinking(snippet(th)),
+            (None, None) if has_tool_use => EntryKind::ToolUse,
+            (None, None) => EntryKind::Other,
+        }
+    }
+
+    fn user_kind(v: &serde_json::Value) -> EntryKind {
+        let content = v.get("message").and_then(|m| m.get("content"));
+        let text = match content.and_then(|c| c.as_array()) {
+            Some(blocks) => blocks.iter().find_map(|block| {
+                if block.get("type").and_then(|t| t.as_str()) == Some("text") {
+                    block
+                        .get("text")
+                        .and_then(|t| t.as_str())
+                        .filter(|t| !t.trim().is_empty())
+                } else {
+                    None
+                }
+            }),
+            // Plain-string content (older transcript shape).
+            None => content
+                .and_then(|c| c.as_str())
+                .filter(|t| !t.trim().is_empty()),
+        };
+        match text {
+            Some(t) => EntryKind::UserText(snippet(t)),
+            None => EntryKind::Other,
         }
     }
 
@@ -234,7 +274,7 @@ impl IntentIndex {
                         first_thinking = Some(t.clone());
                     }
                 }
-                EntryKind::ToolUse | EntryKind::Other => {}
+                EntryKind::ToolUse | EntryKind::UserText(_) | EntryKind::Other => {}
             }
             let Some(parent) = cur.parent_uuid.as_deref() else {
                 break 'walk;
@@ -246,6 +286,12 @@ impl IntentIndex {
         }
         first_thinking
     }
+}
+
+fn content_blocks(v: &serde_json::Value) -> Option<&Vec<serde_json::Value>> {
+    v.get("message")
+        .and_then(|m| m.get("content"))
+        .and_then(|c| c.as_array())
 }
 
 /// Collapse whitespace and cap the snippet length.
@@ -298,6 +344,15 @@ mod tests {
             .unwrap_or_default();
         format!(
             r#"{{"uuid":"{uuid}",{parent_json}"type":"user","message":{{"role":"user","content":[{{"type":"tool_result","tool_use_id":"x"}}]}}}}"#
+        )
+    }
+
+    fn user_text(uuid: &str, parent: Option<&str>, text: &str) -> String {
+        let parent_json = parent
+            .map(|p| format!("\"parentUuid\":\"{p}\","))
+            .unwrap_or_default();
+        format!(
+            r#"{{"uuid":"{uuid}",{parent_json}"type":"user","message":{{"role":"user","content":[{{"type":"text","text":"{text}"}}]}}}}"#
         )
     }
 
@@ -405,6 +460,29 @@ mod tests {
     }
 
     #[test]
+    fn late_parent_text_is_found_by_live_lookup() {
+        // The real-world regression: Claude Code appends the parent text
+        // AFTER the tool_use line, so resolve-at-absorb-time missed it.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("t.jsonl");
+        write_transcript(&path, &[assistant_tool_use("u2", Some("u1"), "call_late")]);
+        let mut idx = IntentIndex::new();
+        idx.refresh(&path);
+        assert_eq!(
+            idx.operation_intent("call_late"),
+            None,
+            "parent not yet in file: no intent yet"
+        );
+        // The parent text lands seconds later; a later refresh + query finds it.
+        write_transcript(&path, &[assistant_text("u1", None, "late arriving plan")]);
+        idx.refresh(&path);
+        assert_eq!(
+            idx.operation_intent("call_late").as_deref(),
+            Some("late arriving plan")
+        );
+    }
+
+    #[test]
     fn incremental_refresh_ignores_partial_lines() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("t.jsonl");
@@ -453,6 +531,39 @@ mod tests {
         let mut idx = IntentIndex::new();
         idx.refresh(&path);
         assert_eq!(idx.user_prompt().as_deref(), Some("fix the bug"));
+    }
+
+    #[test]
+    fn user_text_entries_feed_the_prompt_without_lag() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("t.jsonl");
+        write_transcript(
+            &path,
+            &[
+                r#"{"type":"last-prompt","lastPrompt":"older request","leafUuid":"x"}"#.to_string(),
+                user_text("p1", None, "newer request"),
+            ],
+        );
+        let mut idx = IntentIndex::new();
+        idx.refresh(&path);
+        // The later-in-file user entry wins over the stale marker.
+        assert_eq!(idx.user_prompt().as_deref(), Some("newer request"));
+    }
+
+    #[test]
+    fn tool_result_users_do_not_feed_the_prompt() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("t.jsonl");
+        write_transcript(
+            &path,
+            &[
+                r#"{"type":"last-prompt","lastPrompt":"the ask","leafUuid":"x"}"#.to_string(),
+                user_tool_result("r1", None),
+            ],
+        );
+        let mut idx = IntentIndex::new();
+        idx.refresh(&path);
+        assert_eq!(idx.user_prompt().as_deref(), Some("the ask"));
     }
 
     #[test]

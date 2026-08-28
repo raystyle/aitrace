@@ -34,6 +34,9 @@ pub struct HookPayload {
     pub user_intent: Option<String>,
     /// Claude Code transcript file the operation came from.
     pub transcript_path: Option<String>,
+    /// The tool call failed (`tool_response.is_error`). Failed calls never
+    /// produce a file change, so they are counted instead of enriched.
+    pub is_error: bool,
 }
 
 /// A payload with an arrival timestamp so we can expire stale entries.
@@ -145,6 +148,7 @@ mod tests {
             intent: None,
             user_intent: None,
             transcript_path: None,
+            is_error: false,
         }
     }
 

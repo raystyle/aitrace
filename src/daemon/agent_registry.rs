@@ -43,6 +43,7 @@ impl AgentRegistry {
                     first_seen: ts,
                     last_seen: ts,
                     edit_count: 0,
+                    failed_attempts: 0,
                 }
             })
     }
@@ -51,6 +52,16 @@ impl AgentRegistry {
     pub fn increment_edit_count(&mut self, agent_id: &str, ts: i64) {
         if let Some(info) = self.agents.get_mut(agent_id) {
             info.edit_count += 1;
+            info.last_seen = ts;
+        }
+    }
+
+    /// Count a failed tool attempt (PostToolUse with `is_error`). Failed
+    /// calls change no files, so they never enter the edit timeline -- this
+    /// counter is what makes retry/thrash visible in daemon status.
+    pub fn increment_failed_attempts(&mut self, agent_id: &str, ts: i64) {
+        if let Some(info) = self.agents.get_mut(agent_id) {
+            info.failed_attempts += 1;
             info.last_seen = ts;
         }
     }

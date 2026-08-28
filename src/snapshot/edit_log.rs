@@ -34,17 +34,30 @@ impl EditLog {
     ///
     /// Malformed lines are skipped with a warning rather than aborting, which
     /// allows graceful recovery from truncated writes at the end of a log file.
+    ///
+    /// A later record with the same `id` **corrects** an earlier one (the
+    /// daemon appends intent-backfill corrections this way): only the last
+    /// record per id is returned, in first-seen order.
     pub fn read_all(path: &Path) -> anyhow::Result<Vec<EditEvent>> {
+        use std::collections::HashMap;
+
         let file = std::fs::File::open(path)?;
         let reader = std::io::BufReader::new(file);
-        let mut events = Vec::new();
+        let mut events: Vec<EditEvent> = Vec::new();
+        let mut positions: HashMap<u64, usize> = HashMap::new();
         for (i, line) in reader.lines().enumerate() {
             let line = line?;
             if line.trim().is_empty() {
                 continue;
             }
             match serde_json::from_str::<EditEvent>(&line) {
-                Ok(event) => events.push(event),
+                Ok(event) => match positions.get(&event.id) {
+                    Some(&pos) => events[pos] = event,
+                    None => {
+                        positions.insert(event.id, events.len());
+                        events.push(event);
+                    }
+                },
                 Err(e) => {
                     tracing::warn!("skipping malformed line {} in edit log: {}", i + 1, e);
                 }
@@ -144,5 +157,31 @@ mod tests {
         let events = EditLog::read_all(&path).unwrap();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].id, 1);
+    }
+
+    #[test]
+    fn test_read_all_correction_replaces_earlier_record() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("edits.jsonl");
+        let log = EditLog::new(path.clone());
+        let mut first = sample_event(1);
+        first.operation_intent = None;
+        log.append(&first).unwrap();
+        let mut second = sample_event(2);
+        second.operation_intent = None;
+        log.append(&second).unwrap();
+        // Backfill correction for id 1 arrives after newer events.
+        let mut corrected = sample_event(1);
+        corrected.operation_intent = Some("late parent text".to_string());
+        log.append(&corrected).unwrap();
+
+        let events = EditLog::read_all(&path).unwrap();
+        assert_eq!(events.len(), 2, "correction must not duplicate the entry");
+        assert_eq!(events[0].id, 1);
+        assert_eq!(
+            events[0].operation_intent.as_deref(),
+            Some("late parent text")
+        );
+        assert_eq!(events[1].id, 2, "first-seen order preserved");
     }
 }

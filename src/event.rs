@@ -96,6 +96,11 @@ pub struct AgentInfo {
     pub first_seen: i64,
     pub last_seen: i64,
     pub edit_count: u64,
+    /// Failed tool attempts observed via hooks (PostToolUse with
+    /// `tool_response.is_error`). Not part of the edit timeline: the
+    /// timeline is truth-of-disk; this counts retry/thrash visibility.
+    #[serde(default)]
+    pub failed_attempts: u64,
 }
 
 // ─── unit tests ──────────────────────────────────────────────────────────────
@@ -264,6 +269,7 @@ mod tests {
             first_seen: 1000,
             last_seen: 2000,
             edit_count: 5,
+            failed_attempts: 2,
         };
         let json = serde_json::to_string(&info).unwrap();
         let restored: AgentInfo = serde_json::from_str(&json).unwrap();
