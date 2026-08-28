@@ -436,7 +436,7 @@ mod tests {
             .append(true)
             .open(&path)
             .unwrap();
-        write!(f, "{tail}\n").unwrap();
+        writeln!(f, "{tail}").unwrap();
         drop(f);
         idx.refresh(&path);
         assert_eq!(idx.operation_intent("call_2").as_deref(), Some("round one"));
