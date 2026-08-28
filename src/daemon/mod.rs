@@ -513,7 +513,7 @@ fn handle_socket_message(
                 if let Ok(content) = std::fs::read_to_string(&meta_path) {
                     if let Ok(meta) = serde_json::from_str::<crate::session::SessionMeta>(&content)
                     {
-                        (Utc::now().timestamp() - meta.started_at).max(0)
+                        (Utc::now().timestamp_millis() - meta.started_at).max(0) / 1000
                     } else {
                         0
                     }

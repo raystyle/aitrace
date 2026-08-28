@@ -132,6 +132,8 @@ fn test_mcp_tools_call_list_sessions() {
     let sessions = inner["sessions"].as_array().unwrap();
     assert_eq!(sessions.len(), 1);
     assert_eq!(sessions[0]["id"], session_id);
+    // Legacy second-resolution metadata is normalized to milliseconds.
+    assert_eq!(sessions[0]["started_at"], 1_700_000_000_000i64);
 
     // Close stdin and wait for process
     drop(stdin);

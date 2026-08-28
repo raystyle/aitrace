@@ -19,10 +19,29 @@ pub enum SessionMode {
 pub struct SessionMeta {
     pub id: String,
     pub project_path: String,
+    /// Session start in **epoch milliseconds**. Values written before the
+    /// millisecond migration are seconds and are normalized on read.
+    #[serde(deserialize_with = "deserialize_started_at_millis")]
     pub started_at: i64,
     pub mode: SessionMode,
     #[serde(default)]
     pub agents: Vec<AgentInfo>,
+}
+
+/// Normalize legacy second-resolution timestamps to milliseconds.
+///
+/// Second timestamps stay below 10^12 until the year 33658; millisecond
+/// timestamps are above it, so magnitude separates the two eras.
+fn deserialize_started_at_millis<'de, D>(d: D) -> Result<i64, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let v = i64::deserialize(d)?;
+    if v > 0 && v < 1_000_000_000_000 {
+        Ok(v * 1000)
+    } else {
+        Ok(v)
+    }
 }
 
 /// A handle to an active or created session on disk.
@@ -66,7 +85,7 @@ impl SessionManager {
         let meta = SessionMeta {
             id: id.clone(),
             project_path: String::new(),
-            started_at: Utc::now().timestamp(),
+            started_at: Utc::now().timestamp_millis(),
             mode: SessionMode::Enriched,
             agents: Vec::new(),
         };
@@ -96,7 +115,10 @@ impl SessionManager {
             }
         }
 
-        metas.sort_by_key(|m| m.started_at);
+        // Millisecond resolution plus the monotonic id as a tie-break:
+        // creation order survives even for sessions started in the same
+        // millisecond.
+        metas.sort_by(|a, b| a.started_at.cmp(&b.started_at).then(a.id.cmp(&b.id)));
         Ok(metas)
     }
 
@@ -138,6 +160,43 @@ mod tests {
         let v1_json = r#"{"id":"test-123","project_path":"/tmp","started_at":0,"mode":"passive"}"#;
         let meta: SessionMeta = serde_json::from_str(v1_json).unwrap();
         assert!(meta.agents.is_empty());
+    }
+
+    #[test]
+    fn test_legacy_second_timestamps_are_normalized_to_millis() {
+        let legacy = r#"{"id":"s","project_path":"/p","started_at":1787888868,"mode":"passive"}"#;
+        let meta: SessionMeta = serde_json::from_str(legacy).unwrap();
+        assert_eq!(meta.started_at, 1_787_888_868_000);
+
+        // Already-millisecond values pass through untouched.
+        let modern =
+            r#"{"id":"s","project_path":"/p","started_at":1787888868123,"mode":"passive"}"#;
+        let meta: SessionMeta = serde_json::from_str(modern).unwrap();
+        assert_eq!(meta.started_at, 1_787_888_868_123);
+    }
+
+    #[test]
+    fn test_sessions_list_in_creation_order_within_a_second() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mgr = SessionManager::new(tmp.path().to_path_buf());
+
+        let s1 = mgr.create().unwrap();
+        let s2 = mgr.create().unwrap();
+
+        // Millisecond precision: the second session starts strictly later
+        // (session creation does multiple syscalls, so >1ms apart).
+        assert!(s2.dir.file_name() > s1.dir.file_name());
+
+        let metas = mgr.list().unwrap();
+        assert_eq!(metas.len(), 2);
+        assert_eq!(metas[0].id, s1.id, "creation order must hold in list()");
+        assert_eq!(metas[1].id, s2.id);
+        assert!(
+            metas[1].started_at > metas[0].started_at,
+            "millisecond resolution expected: {} vs {}",
+            metas[0].started_at,
+            metas[1].started_at
+        );
     }
 
     #[test]

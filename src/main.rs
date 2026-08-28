@@ -282,7 +282,7 @@ fn main() -> anyhow::Result<()> {
                 println!("{:<30}  {:<20}  {:<8}  mode", "id", "started_at", "agents");
                 println!("{}", "-".repeat(72));
                 for meta in sessions {
-                    let dt = chrono::DateTime::from_timestamp(meta.started_at, 0)
+                    let dt = chrono::DateTime::from_timestamp_millis(meta.started_at)
                         .map(|d| d.format("%Y-%m-%d %H:%M:%S").to_string())
                         .unwrap_or_else(|| meta.started_at.to_string());
                     let agent_count = meta.agents.len();
