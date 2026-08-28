@@ -87,6 +87,10 @@ impl HandlerContext {
         Ok(json!({
             "sessions": sessions,
             "total_count": total_count,
+            // Serving-binary identity on every call: `initialize` happens
+            // once per connection, so this is the way to mechanically check
+            // which build an already-connected MCP client is talking to.
+            "buildHash": crate::build_hash(),
         }))
     }
 

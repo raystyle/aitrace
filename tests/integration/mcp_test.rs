@@ -139,6 +139,12 @@ fn test_mcp_tools_call_list_sessions() {
     assert_eq!(sessions[0]["id"], session_id);
     // Legacy second-resolution metadata is normalized to milliseconds.
     assert_eq!(sessions[0]["started_at"], 1_700_000_000_000i64);
+    // The serving binary identifies itself on every regular call, so a
+    // stale reconnected server is detectable without re-initializing.
+    assert!(
+        inner["buildHash"].as_str().is_some_and(|h| !h.is_empty()),
+        "list_sessions must carry a buildHash; got: {inner}"
+    );
 
     // Close stdin and wait for process
     drop(stdin);
