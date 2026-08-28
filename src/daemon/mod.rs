@@ -109,66 +109,21 @@ pub fn run_daemon(project_path: PathBuf, config: Config) -> Result<()> {
         let mut should_stop = false;
 
         // 7a. Drain socket messages.
-        while let Ok(msg) = sock_rx.try_recv() {
-            match msg {
-                SocketMessage::Hook(payload, file) => {
-                    // Register or update the agent.
-                    let ts = Utc::now().timestamp_millis();
-                    agent_registry.register_or_update(&payload.agent_id, "claude-code", ts);
-                    // Push enrichment for correlation. Hooks report absolute
-                    // paths while watcher events are project-relative, so both
-                    // sides are normalized to the same canonical key.
-                    let key = correlation::correlation_key(&file, &project_path);
-                    correlator.push_enrichment(&key, payload);
-                }
-
-                SocketMessage::RestoreStart { restore_id, files } => {
-                    correlator.register_restore(restore_id, &files);
-                }
-
-                SocketMessage::RestoreEnd { restore_id } => {
-                    correlator.clear_restore(restore_id);
-                }
-
-                SocketMessage::StatusQuery(mut stream) => {
-                    let agents = agent_registry.to_vec();
-                    let uptime_secs = {
-                        // Calculate from session start time.
-                        let meta_path = session.dir.join("meta.json");
-                        if let Ok(content) = std::fs::read_to_string(&meta_path) {
-                            if let Ok(meta) =
-                                serde_json::from_str::<crate::session::SessionMeta>(&content)
-                            {
-                                (Utc::now().timestamp() - meta.started_at).max(0)
-                            } else {
-                                0
-                            }
-                        } else {
-                            0
-                        }
-                    };
-
-                    let status = serde_json::json!({
-                        "type": "status",
-                        "pid": my_pid,
-                        "session_id": session.id,
-                        "uptime_secs": uptime_secs,
-                        "edit_count": edit_count,
-                        "agents": agents,
-                    });
-
-                    let _ = writeln!(stream, "{}", status);
-                }
-
-                SocketMessage::Subscribe { session_id, stream } => {
-                    if session_id == session.id {
-                        if let Some(s) = stream {
-                            subscribers.push(s);
-                        }
-                    }
-                }
-
-                SocketMessage::Stop => {
+        {
+            let mut state = LoopState {
+                correlator: &mut correlator,
+                agent_registry: &mut agent_registry,
+                subscribers: &mut subscribers,
+            };
+            while let Ok(msg) = sock_rx.try_recv() {
+                if handle_socket_message(
+                    msg,
+                    &mut state,
+                    &session,
+                    my_pid,
+                    edit_count,
+                    &project_path,
+                ) {
                     should_stop = true;
                 }
             }
@@ -187,29 +142,66 @@ pub fn run_daemon(project_path: PathBuf, config: Config) -> Result<()> {
                 .unwrap_or_else(|_| abs_path.to_string_lossy().to_string());
 
             // Build enrichment: restore takes precedence over hook.
+            let rel_key = correlation::correlation_key(&rel_path, &project_path);
             let enrichment = if let Some(restore_id) = correlator.pop_restore(&rel_path) {
                 // Restore wins -- discard any hook enrichment for this file.
-                let _ = correlator.pop_enrichment(&rel_path);
+                let _ = correlator.pop_enrichment(&rel_key);
                 Some(Enrichment {
                     restore_id: Some(restore_id),
                     ..Default::default()
                 })
-            } else if let Some(hook) =
-                correlator.pop_enrichment(&correlation::correlation_key(&rel_path, &project_path))
-            {
-                let label = agent_registry
-                    .get(&hook.agent_id)
-                    .map(|info| info.agent_label.clone());
-                Some(Enrichment {
-                    agent_id: Some(hook.agent_id.clone()),
-                    agent_label: label,
-                    operation_id: Some(hook.operation_id),
-                    operation_intent: hook.intent,
-                    tool_name: Some(hook.tool_name),
-                    restore_id: None,
-                })
             } else {
-                None
+                let mut hook = correlator.pop_enrichment(&rel_key);
+                if hook.is_none() {
+                    // PostToolUse fires after the file write is already on
+                    // disk, so the hook message is frequently still in flight
+                    // when the watcher event arrives. Wait briefly for it
+                    // instead of recording the edit without enrichment.
+                    let deadline = std::time::Instant::now() + HOOK_GRACE;
+                    while std::time::Instant::now() < deadline {
+                        {
+                            let mut state = LoopState {
+                                correlator: &mut correlator,
+                                agent_registry: &mut agent_registry,
+                                subscribers: &mut subscribers,
+                            };
+                            while let Ok(msg) = sock_rx.try_recv() {
+                                if handle_socket_message(
+                                    msg,
+                                    &mut state,
+                                    &session,
+                                    my_pid,
+                                    edit_count,
+                                    &project_path,
+                                ) {
+                                    should_stop = true;
+                                }
+                            }
+                        }
+                        if let Some(h) = correlator.pop_enrichment(&rel_key) {
+                            hook = Some(h);
+                            break;
+                        }
+                        std::thread::sleep(Duration::from_millis(20));
+                    }
+                }
+                if should_stop {
+                    // Daemon is shutting down; drop this event.
+                    break;
+                }
+                hook.map(|hook| {
+                    let label = agent_registry
+                        .get(&hook.agent_id)
+                        .map(|info| info.agent_label.clone());
+                    Enrichment {
+                        agent_id: Some(hook.agent_id.clone()),
+                        agent_label: label,
+                        operation_id: Some(hook.operation_id),
+                        operation_intent: hook.intent,
+                        tool_name: Some(hook.tool_name),
+                        restore_id: None,
+                    }
+                })
             };
 
             match recorder.process_file_change(&abs_path, &event_tx, enrichment.as_ref()) {
@@ -271,6 +263,97 @@ pub fn run_daemon(project_path: PathBuf, config: Config) -> Result<()> {
     let _ = std::fs::remove_file(&sock_file);
 
     Ok(())
+}
+
+/// How long a file-change event waits for an in-flight PostToolUse hook
+/// before recording the edit without enrichment. The hook has to spawn a
+/// process, connect, and write, so it typically lands tens of milliseconds
+/// after the watcher event for the same edit.
+const HOOK_GRACE: Duration = Duration::from_millis(250);
+
+/// Mutable state shared by the socket-message handlers in the main loop.
+struct LoopState<'a> {
+    correlator: &'a mut Correlator,
+    agent_registry: &'a mut AgentRegistry,
+    subscribers: &'a mut Vec<ipc::UnixStream>,
+}
+
+/// Handle one socket message.
+///
+/// Shared by the main socket drain and the hook-grace wait inside the
+/// file-change drain, so a hook (or any other message) arriving mid-wait is
+/// processed exactly as in the main loop. Returns true when the daemon
+/// should stop.
+fn handle_socket_message(
+    msg: SocketMessage,
+    state: &mut LoopState<'_>,
+    session: &crate::session::Session,
+    my_pid: i32,
+    edit_count: u64,
+    project_path: &std::path::Path,
+) -> bool {
+    match msg {
+        SocketMessage::Hook(payload, file) => {
+            // Register or update the agent.
+            let ts = Utc::now().timestamp_millis();
+            state
+                .agent_registry
+                .register_or_update(&payload.agent_id, "claude-code", ts);
+            // Push enrichment for correlation. Hooks report absolute
+            // paths while watcher events are project-relative, so both
+            // sides are normalized to the same canonical key.
+            let key = correlation::correlation_key(&file, project_path);
+            state.correlator.push_enrichment(&key, payload);
+        }
+
+        SocketMessage::RestoreStart { restore_id, files } => {
+            state.correlator.register_restore(restore_id, &files);
+        }
+
+        SocketMessage::RestoreEnd { restore_id } => {
+            state.correlator.clear_restore(restore_id);
+        }
+
+        SocketMessage::StatusQuery(mut stream) => {
+            let agents = state.agent_registry.to_vec();
+            let uptime_secs = {
+                // Calculate from session start time.
+                let meta_path = session.dir.join("meta.json");
+                if let Ok(content) = std::fs::read_to_string(&meta_path) {
+                    if let Ok(meta) = serde_json::from_str::<crate::session::SessionMeta>(&content)
+                    {
+                        (Utc::now().timestamp() - meta.started_at).max(0)
+                    } else {
+                        0
+                    }
+                } else {
+                    0
+                }
+            };
+
+            let status = serde_json::json!({
+                "type": "status",
+                "pid": my_pid,
+                "session_id": session.id,
+                "uptime_secs": uptime_secs,
+                "edit_count": edit_count,
+                "agents": agents,
+            });
+
+            let _ = writeln!(stream, "{}", status);
+        }
+
+        SocketMessage::Subscribe { session_id, stream } => {
+            if session_id == session.id {
+                if let Some(s) = stream {
+                    state.subscribers.push(s);
+                }
+            }
+        }
+
+        SocketMessage::Stop => return true,
+    }
+    false
 }
 
 /// Start the daemon as a detached child process.
