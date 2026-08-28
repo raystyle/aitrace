@@ -1,6 +1,6 @@
 # aitrace
 
-Rust 无头工具（daemon + CLI + MCP，**无 TUI**——0.7.0 已移除）：AI 编程会话可观测性。把每次文件编辑记录进 `.aitrace/`，关联 Claude Code hook 元数据与 transcript 意图，经 MCP 暴露时间线，让 agent 检查并修正自己的回归。当前阶段：**Claude Code · Windows · Beta**。
+Rust 无头工具（daemon + CLI + MCP，**无 TUI**——0.7.0 已移除）：AI 编程会话可观测性。把每次文件编辑记录进 `.aitrace/`，关联 Claude Code hook 元数据与 transcript 意图，经 MCP 暴露时间线，让 agent 检查并修正自己的回归。当前阶段：**Claude Code · Windows + Linux · Beta，目标 1.0.0 三平台**（CI 矩阵 ubuntu/macos/windows 全绿；Linux 真机 WSL 验证过，macOS 真机待验收）。
 
 本仓库是 Claude Code 的工作目录。**只用项目级配置，禁止污染全局**：hook / MCP / skill 一律部署在本仓库（`.claude/settings.json`、根目录 `.mcp.json`、`.claude/skills/`），绝不写入 `~/.claude/` 或 `~/.claude.json` 用户级；本地覆盖放 `.claude/settings.local.json`（gitignored，勿提交）。不改用户的 rustup / cargo home 和 `D:\ohmypwsh`。首次在本目录启动：接受工作区信任对话框，`/mcp` 批准 `aitrace` 服务器。
 

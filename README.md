@@ -2,7 +2,7 @@
 
 AI 编程会话的可观测性驾驶舱：记录每一次文件编辑，关联 Claude Code 的会话元数据（agent、工具调用、意图），并通过 MCP 把时间线暴露给 agent——让 agent 能够检查并修正自己引入的回归。
 
-**当前状态：Claude Code · Windows · Beta（v0.6.4）**
+**当前状态：Claude Code · Windows + Linux · Beta（v0.7.2，目标 1.0.0 三平台）**
 
 ```
 cargo run --release
@@ -10,16 +10,25 @@ cargo run --release
 
 ---
 
-## 当前状态（Beta）
+## 当前状态（Beta · 通往 1.0.0）
 
-以下能力已在本仓库环境（Windows 10/11 + Claude Code）端到端验证：
+三平台 CI 全绿（ubuntu / macos / windows）；真机全量测试：Windows 10/11 + Linux（WSL）。以下能力已端到端验证：
 
 - **全链路录制**：`PostToolUse` hook → daemon → 快照存储 + 编辑日志，每帧携带 `agent_label`、`operation_id`（`session:tool_use_id`）、`operation_intent`（assistant 声明的意图）、`intent`（触发编辑的用户请求）
 - **MCP server**：7 个 timeline 工具，agent 可直接查询帧、diff、回归窗口
 - **自纠工作流**：`/aitrace` skill，测试失败时按时间线定位回归帧并外科手术式修复
 - **覆盖安装与版本验证**：daemon 停止 → 构建 → 重启的验收流程，MCP 进程重连即升级
 
-以下能力继承自上游（vibetracer），代码保留但**未在本阶段验证**：macOS / Linux、Cursor / Codex CLI 会话导入、git-ai 导出。
+跨平台注意事项：Windows AF_UNIX 走 `uds_windows`，Unix 走 std；macOS FSEvents 报告解析后的路径（`/private/var/...`），关联键已做 canonical 兜底。待办：SessionStart/Stop hook 脚本目前为 PowerShell（Linux 下报错但不阻塞录制）；macOS 真机验收。以下能力继承自上游（vibetracer），代码保留但**未验证**：Cursor / Codex CLI 会话导入、git-ai 导出。
+
+### 路线：1.0.0
+
+- [x] 三平台 CI 矩阵全绿（`workflow_dispatch` 手动触发；fork 仓库 push 触发待启用）
+- [x] Linux 真机（WSL）全量测试通过
+- [ ] Linux 下 Claude Code 集成接管开发
+- [ ] macOS 真机验收
+- [ ] hook 脚本跨平台化（去 PowerShell 依赖）
+- [ ] 1.0.0：三平台 + 文档 + 冻结 MCP 工具面
 
 ---
 
@@ -173,19 +182,16 @@ message = "Unusually high edit rate"
 ## CLI 参考
 
 ```
-aitrace [path]                          监视目录（默认当前目录）
-aitrace demo                            （已随 TUI 移除）
-aitrace replay <session>                回放历史会话
+aitrace [path]                          状态摘要（daemon 状态 + 会话计数）
+aitrace replay <session>                文本时间线回放（帧号/±行/文件 + 双意图）
 aitrace sessions                        列出历史会话
 aitrace import [session]                导入 Claude Code 会话（上游能力）
 aitrace restore <file> --edit-id <N>    恢复文件到指定编辑
 aitrace export --format agent-trace <session>   导出 Agent Trace JSON（上游能力）
 aitrace export --format git-notes <session>     写 git-ai git notes（上游能力）
 aitrace mcp                             启动 MCP 服务器（stdio JSON-RPC）
-aitrace daemon start|stop|status        管理后台 daemon
+aitrace daemon start|stop|status|reap   管理后台 daemon
 aitrace init                            生成配置（自动探测）
-aitrace --no-daemon [path]              单进程模式
-aitrace --debug [path]                  写调试日志
 ```
 
 ---
@@ -235,7 +241,7 @@ daemon 把变更写入 `.aitrace/` 下的追加式 JSONL 编辑日志；每个�
 
 - **Rust 1.85+**（edition 2024）
 - **Windows 10 1809+**（AF_UNIX，经 `uds_windows`；不引入命名管道 / TCP / nightly）
-- macOS / Linux 为上游继承能力，本阶段未验证
+- **Linux / macOS**：std AF_UNIX；构建与全量测试由 CI 三平台矩阵验证
 
 ---
 
