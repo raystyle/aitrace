@@ -5,6 +5,7 @@ pub mod bookmarks;
 pub mod event_loop;
 pub mod filter;
 pub mod input;
+pub mod input_test;
 pub mod intro;
 pub mod layout;
 pub mod operation;

@@ -33,6 +33,10 @@ struct Cli {
     #[arg(long)]
     no_daemon: bool,
 
+    /// Internal: terminal input-path self-test (diagnostics on screen)
+    #[arg(long, hide = true)]
+    input_test: bool,
+
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -102,6 +106,11 @@ fn main() -> anyhow::Result<()> {
     attach_parent_console();
 
     let cli = Cli::parse();
+
+    // Input-path self-test: raw-mode / alt-screen / event diagnostics.
+    if cli.input_test {
+        return aitrace::tui::input_test::run();
+    }
 
     // Black box for TUI crashes: a panicking TUI dies with a broken screen
     // and no trace, which makes the crash undiagnosable after the fact.
