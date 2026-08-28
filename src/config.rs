@@ -3,7 +3,25 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 
-use crate::tui::alerts::AlertConfig;
+/// Action to take when an alert fires.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum AlertAction {
+    Toast,
+    Flash,
+    Bell,
+}
+
+/// A configured alert rule (evaluation lives with the daemon consumers;
+/// the TUI that used to evaluate these is gone).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AlertConfig {
+    pub name: String,
+    pub when: String,
+    pub action: AlertAction,
+    #[serde(default)]
+    pub message: Option<String>,
+}
 
 /// Filesystem watch configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]

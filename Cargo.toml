@@ -1,6 +1,6 @@
 [package]
 name = "aitrace"
-version = "0.6.5"
+version = "0.7.0"
 edition = "2024"
 description = "Real-time tracing, replaying, and rewinding of AI coding assistant edits. MCP server for AI self-correction. Cross-agent support (Claude Code, Cursor, Codex). Export to Agent Trace JSON and git-ai git notes."
 license = "MIT"
@@ -8,8 +8,6 @@ repository = "https://github.com/raystyle/aitrace"
 publish = false
 
 [dependencies]
-ratatui = "0.29"
-crossterm = "0.28"
 notify = "7"
 notify-debouncer-mini = "0.5"
 similar = "2"
@@ -26,7 +24,6 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 anyhow = "1"
 dirs = "6"
-syntect = { version = "5", default-features = false, features = ["default-syntaxes", "default-themes", "regex-onig"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

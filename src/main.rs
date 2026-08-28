@@ -1,19 +1,16 @@
 // Console subsystem on purpose. `windows_subsystem = "windows"` makes pwsh/cmd
-// return to the prompt immediately, so the shell and the TUI share one console
-// (prompt bleeds through, keys never reach crossterm). Daemon/hook/MCP flashes
-// are prevented at spawn time with CREATE_NO_WINDOW, not by hiding the PE
-// subsystem.
+// return to the prompt immediately, so the shell and the process share one
+// console. Daemon/hook/MCP flashes are prevented at spawn time with
+// CREATE_NO_WINDOW, not by hiding the PE subsystem.
 
 use clap::Parser;
 use std::path::PathBuf;
 
-use aitrace::config::Config;
 use aitrace::import::claude::{import_session, list_sessions};
 use aitrace::restore::RestoreEngine;
 use aitrace::session::SessionManager;
 use aitrace::snapshot::edit_log::EditLog;
 use aitrace::snapshot::store::SnapshotStore;
-use aitrace::tui::{App, PlaybackState, RunOptions};
 
 #[derive(Parser)]
 #[command(
@@ -25,21 +22,9 @@ struct Cli {
     /// Project directory to watch (defaults to current directory)
     path: Option<String>,
 
-    /// Write debug log to .aitrace/debug.log
-    #[arg(long)]
-    debug: bool,
-
     /// Internal: run as daemon child process (do not use directly)
     #[arg(long, hide = true)]
     daemon_child: bool,
-
-    /// Disable auto-starting the background daemon (single-process mode)
-    #[arg(long)]
-    no_daemon: bool,
-
-    /// Internal: terminal input-path self-test (diagnostics on screen)
-    #[arg(long, hide = true)]
-    input_test: bool,
 
     #[command(subcommand)]
     command: Option<Commands>,
@@ -47,9 +32,7 @@ struct Cli {
 
 #[derive(clap::Subcommand)]
 enum Commands {
-    /// Run an interactive demo showcasing all features
-    Demo,
-    /// Replay a past session
+    /// Print a session's timeline as text
     Replay { session_id: String },
     /// List past sessions
     Sessions,
@@ -109,23 +92,15 @@ enum DaemonCommands {
 
 fn main() -> anyhow::Result<()> {
     #[cfg(windows)]
-    attach_parent_console();
-
     let cli = Cli::parse();
 
-    // Input-path self-test: raw-mode / alt-screen / event diagnostics.
-    if cli.input_test {
-        return aitrace::tui::input_test::run();
-    }
-
-    // Black box for TUI crashes: a panicking TUI dies with a broken screen
-    // and no trace, which makes the crash undiagnosable after the fact.
-    // Every panic is appended to <project>/.aitrace/tui-panic.log with a
-    // backtrace before the default hook runs.
+    // Black box for crashes: every panic is appended to
+    // <project>/.aitrace/panic.log with a backtrace before the default
+    // hook runs, so even a fast-exiting failure leaves a trace.
     {
         let panic_log = resolve_path(cli.path.as_deref())?
             .join(".aitrace")
-            .join("tui-panic.log");
+            .join("panic.log");
         let prev_hook = std::panic::take_hook();
         std::panic::set_hook(Box::new(move |info| {
             use std::io::Write;
@@ -239,13 +214,6 @@ fn main() -> anyhow::Result<()> {
                     }
                 }
             }
-        }
-
-        // ── Demo: interactive feature showcase ──────────────────────────────────
-        Some(Commands::Demo) => {
-            let project_path = resolve_path(cli.path.as_deref())?;
-            let config = load_config_or_default(&project_path);
-            aitrace::demo::run_demo(project_path, config)?;
         }
 
         // ── Init: write auto-detected config ──────────────────────────────────
@@ -370,31 +338,28 @@ fn main() -> anyhow::Result<()> {
 
             let edits = EditLog::read_all(&edit_log_path)?;
 
-            // Build app in Paused mode with preloaded edits.
-            let mut app = App::new();
-            app.playback = PlaybackState::Paused;
-            for edit in edits {
-                app.push_edit(edit);
+            println!("session {} — {} edits", session_id, edits.len());
+            println!("{:<5}  {:<9}  {:<6}  {:<6}  file", "#", "time", "+", "-");
+            println!("{}", "-".repeat(72));
+            for e in &edits {
+                let time = chrono::DateTime::from_timestamp_millis(e.ts)
+                    .map(|d| d.format("%H:%M:%S").to_string())
+                    .unwrap_or_else(|| e.ts.to_string());
+                println!(
+                    "{:<5}  {:<9}  {:<6}  {:<6}  {}",
+                    e.id, time, e.lines_added, e.lines_removed, e.file
+                );
+                if let Some(intent) = &e.operation_intent {
+                    println!("      op:  {}", intent);
+                }
+                if let Some(intent) = &e.intent {
+                    println!("      ask: {}", intent);
+                }
             }
-            // Set playhead to beginning for replay.
-            if !app.edits.is_empty() {
-                app.playhead = 0;
-                app.playback = PlaybackState::Paused;
-            }
-
-            println!(
-                "replaying session {} ({} edits)",
-                session_id,
-                app.edits.len()
-            );
-
-            // Run TUI in replay mode with preloaded edits.
-            let config = load_config_or_default(&project_path);
-            let options = RunOptions {
-                initial_app: Some(app),
-                ..Default::default()
-            };
-            run_tui_guarded(project_path, config, options)?;
+            let added: u32 = edits.iter().map(|e| e.lines_added).sum();
+            let removed: u32 = edits.iter().map(|e| e.lines_removed).sum();
+            println!("{}", "-".repeat(72));
+            println!("total: +{added} / -{removed} across {} edits", edits.len());
         }
 
         // ── Import: import a past Claude Code session ─────────────────────────
@@ -439,30 +404,12 @@ fn main() -> anyhow::Result<()> {
 
                     let edits = import_session(&jsonl_path, &project_path)?;
 
-                    // Build app in Paused mode with imported edits
-                    let mut app = App::new();
-                    app.playback = PlaybackState::Paused;
-                    for edit in &edits {
-                        app.push_edit(edit.clone());
-                    }
-                    if !app.edits.is_empty() {
-                        app.playhead = 0;
-                        app.playback = PlaybackState::Paused;
-                    }
-
                     println!(
                         "imported {} edits from {}",
-                        app.edits.len(),
+                        edits.len(),
                         jsonl_path.display()
                     );
-
-                    // Run TUI with preloaded edits.
-                    let config = load_config_or_default(&project_path);
-                    let options = RunOptions {
-                        initial_app: Some(app),
-                        ..Default::default()
-                    };
-                    aitrace::tui::run_tui_with_options(project_path, config, options)?;
+                    println!("inspect with: aitrace replay <session>");
                 }
             }
         }
@@ -563,112 +510,43 @@ fn main() -> anyhow::Result<()> {
             aitrace::hook::send::send_to_daemon(&project_path)?;
         }
 
-        // ── Default: run live TUI ──────────────────────────────────────────────
+        // ── Default: headless status summary ───────────────────────────────────
+        // aitrace is a daemon + CLI + MCP by design; there is no TUI.
         None => {
             let project_path = resolve_path(cli.path.as_deref())?;
-            let config = load_config_or_default(&project_path);
 
-            let options = RunOptions {
-                no_daemon: cli.no_daemon,
-                ..Default::default()
-            };
-
-            if cli.debug {
-                let log_path = project_path.join(".aitrace").join("debug.log");
-                std::fs::create_dir_all(log_path.parent().unwrap())?;
-                let file = std::fs::File::create(&log_path)?;
-                tracing_subscriber::fmt()
-                    .with_writer(file)
-                    .with_ansi(false)
-                    .init();
-                eprintln!("debug log: {}", log_path.display());
+            match aitrace::daemon::daemon_status(&project_path) {
+                Ok(status_json) => {
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&status_json) {
+                        println!(
+                            "daemon: pid {} · {} · {} ({}) · {} edits · {} agents",
+                            v.get("pid").and_then(|x| x.as_i64()).unwrap_or(0),
+                            v.get("session_id").and_then(|x| x.as_str()).unwrap_or("?"),
+                            v.get("version").and_then(|x| x.as_str()).unwrap_or("?"),
+                            v.get("build_hash").and_then(|x| x.as_str()).unwrap_or("?"),
+                            v.get("edit_count").and_then(|x| x.as_u64()).unwrap_or(0),
+                            v.get("agents")
+                                .and_then(|x| x.as_array())
+                                .map(|a| a.len())
+                                .unwrap_or(0),
+                        );
+                    } else {
+                        println!("daemon: running (unparsable status)");
+                    }
+                }
+                Err(_) => println!("daemon: not running -- start with `aitrace daemon start`"),
             }
 
-            // Ensure terminal is restored even on panic.
-            run_tui_guarded(project_path, config, options)?;
+            let sessions_dir = project_path.join(".aitrace").join("sessions");
+            let sessions = SessionManager::new(sessions_dir).list().unwrap_or_default();
+            println!("sessions: {} recorded", sessions.len());
+            println!(
+                "inspect:  aitrace sessions · aitrace replay <id> · aitrace mcp (stdio JSON-RPC)"
+            );
         }
     }
 
     Ok(())
-}
-
-/// Run the TUI with panic protection shared by the live and replay paths:
-/// a panic restores the terminal instead of leaving a dead frame with the
-/// shell drawing over it, and the details are already in tui-panic.log via
-/// the global hook.
-fn run_tui_guarded(
-    project_path: PathBuf,
-    config: Config,
-    options: RunOptions,
-) -> anyhow::Result<()> {
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        aitrace::tui::run_tui_with_options(project_path, config, options)
-    }));
-
-    match result {
-        Ok(Ok(())) => Ok(()),
-        Ok(Err(e)) => {
-            // Normal error -- terminal already restored by run_tui
-            eprintln!("error: {e}");
-            std::process::exit(1);
-        }
-        Err(panic_info) => {
-            // Panic -- force restore terminal
-            let _ = crossterm::terminal::disable_raw_mode();
-            let _ = crossterm::execute!(
-                std::io::stdout(),
-                crossterm::terminal::LeaveAlternateScreen,
-                crossterm::cursor::Show
-            );
-            eprintln!("aitrace crashed. Your terminal has been restored.");
-            if let Some(msg) = panic_info.downcast_ref::<&str>() {
-                eprintln!("panic: {msg}");
-            } else if let Some(msg) = panic_info.downcast_ref::<String>() {
-                eprintln!("panic: {msg}");
-            }
-            eprintln!("panic details written to <project>/.aitrace/tui-panic.log");
-            std::process::exit(1);
-        }
-    }
-}
-
-/// Attach to the parent terminal only when this process has no stdout yet
-/// (rare for a console-subsystem binary). Piped stdio (MCP, hook-send,
-/// captured CLI) is left alone. Daemon children are spawned with
-/// CREATE_NO_WINDOW so they do not flash a console.
-#[cfg(windows)]
-fn attach_parent_console() {
-    use std::fs::OpenOptions;
-    use std::os::windows::io::AsRawHandle;
-    use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
-    use windows_sys::Win32::System::Console::{
-        AttachConsole, GetStdHandle, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
-        SetStdHandle,
-    };
-
-    unsafe {
-        let stdout = GetStdHandle(STD_OUTPUT_HANDLE);
-        if !stdout.is_null() && stdout != INVALID_HANDLE_VALUE {
-            return;
-        }
-        if AttachConsole(u32::MAX) == 0 {
-            return;
-        }
-    }
-
-    if let Ok(out) = OpenOptions::new().write(true).read(true).open("CONOUT$") {
-        unsafe {
-            SetStdHandle(STD_OUTPUT_HANDLE, out.as_raw_handle());
-            SetStdHandle(STD_ERROR_HANDLE, out.as_raw_handle());
-        }
-        std::mem::forget(out);
-    }
-    if let Ok(inp) = OpenOptions::new().read(true).write(true).open("CONIN$") {
-        unsafe {
-            SetStdHandle(STD_INPUT_HANDLE, inp.as_raw_handle());
-        }
-        std::mem::forget(inp);
-    }
 }
 
 /// Resolve the project path from an optional CLI argument (defaults to cwd).
@@ -681,9 +559,9 @@ fn resolve_path(arg: Option<&str>) -> anyhow::Result<PathBuf> {
 }
 
 /// Load config from `.aitrace/config.toml`, falling back to defaults.
-fn load_config_or_default(project_path: &std::path::Path) -> Config {
+fn load_config_or_default(project_path: &std::path::Path) -> aitrace::config::Config {
     let config_path = project_path.join(".aitrace").join("config.toml");
-    Config::load(&config_path).unwrap_or_default()
+    aitrace::config::Config::load(&config_path).unwrap_or_default()
 }
 
 /// Find the most recently modified session directory under `vt_dir/sessions/`.

@@ -1,6 +1,6 @@
 # aitrace
 
-Rust TUI：AI 编程会话可观测性。把每次文件编辑记录进 `.aitrace/`，关联 Claude Code hook 元数据与 transcript 意图，经 MCP 暴露时间线，让 agent 检查并修正自己的回归。当前阶段：**Claude Code · Windows · Beta**。
+Rust 无头工具（daemon + CLI + MCP，**无 TUI**——0.7.0 已移除）：AI 编程会话可观测性。把每次文件编辑记录进 `.aitrace/`，关联 Claude Code hook 元数据与 transcript 意图，经 MCP 暴露时间线，让 agent 检查并修正自己的回归。当前阶段：**Claude Code · Windows · Beta**。
 
 本仓库是 Claude Code 的工作目录。**只用项目级配置，禁止污染全局**：hook / MCP / skill 一律部署在本仓库（`.claude/settings.json`、根目录 `.mcp.json`、`.claude/skills/`），绝不写入 `~/.claude/` 或 `~/.claude.json` 用户级；本地覆盖放 `.claude/settings.local.json`（gitignored，勿提交）。不改用户的 rustup / cargo home 和 `D:\ohmypwsh`。首次在本目录启动：接受工作区信任对话框，`/mcp` 批准 `aitrace` 服务器。
 
@@ -52,11 +52,10 @@ aitrace mcp
 
 ## 布局
 
-- `src/main.rs` — CLI（`daemon`、`mcp`、`hook-send`、TUI）
+- `src/main.rs` — CLI（`daemon`、`mcp`、`hook-send`、`sessions`、`replay`）
 - `src/daemon/` — 后台录制器；`correlation.rs`（hook↔watcher 关联 + HOOK_GRACE 宽限）、`intent_index.rs`（transcript 意图解析）、`agent_registry.rs`
 - `src/mcp/` — stdio JSON-RPC
 - `src/hook/` — hook 注册 + `hook-send`
-- `src/tui/` — ratatui UI
 - 数据：`.aitrace/`（gitignored）— 快照、`edits.jsonl`、`daemon.sock`、`bin/aitrace.exe`
 
 ## 约束
@@ -64,5 +63,5 @@ aitrace mcp
 - crate / 二进制名 `aitrace`，不得改回 vibetracer。
 - `publish = false`；无 Homebrew、无 crates.io。
 - Windows 10 1809+（AF_UNIX 经 `uds_windows`）；不引入命名管道、TCP、nightly std AF_UNIX。
-- **交互 TUI 必须是 PE 控制台子系统（CUI）**。禁止 `#![windows_subsystem = "windows"]`：pwsh/cmd 不等 GUI 子系统，提示符和键盘留在 shell，表现为「框是 TUI、底下仍有 `pwsh ❯`、`--input-test` 无 Key 事件」。daemon/hook/MCP 闪框用 `CREATE_NO_WINDOW`，不靠改 PE。机检：`tests/subsystem.rs`。
+- **二进制必须是 PE 控制台子系统（CUI）**。禁止 `#![windows_subsystem = "windows"]`：pwsh/cmd 不等 GUI 子系统，提示符和键盘留在 shell。daemon/hook/MCP 闪框用 `CREATE_NO_WINDOW`，不靠改 PE。机检：`tests/subsystem.rs`。**不重新引入 TUI**（0.7.0 移除，决策已定）。
 - CLAUDE.md 保持精简，长流程放 `.claude/skills/`。
