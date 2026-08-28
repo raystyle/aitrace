@@ -1,0 +1,5 @@
+# Normalize the whole repo to LF on checkout and in the index.
+# Editors, rustfmt, and the Claude Code Write/Edit tools all emit LF;
+# enforcing LF everywhere stops old CRLF checkouts from breaking exact
+# string matching and producing mixed line endings in the working tree.
+* text=auto eol=lf
