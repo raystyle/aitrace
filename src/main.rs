@@ -103,6 +103,33 @@ fn main() -> anyhow::Result<()> {
 
     let cli = Cli::parse();
 
+    // Black box for TUI crashes: a panicking TUI dies with a broken screen
+    // and no trace, which makes the crash undiagnosable after the fact.
+    // Every panic is appended to <project>/.aitrace/tui-panic.log with a
+    // backtrace before the default hook runs.
+    {
+        let panic_log = resolve_path(cli.path.as_deref())?
+            .join(".aitrace")
+            .join("tui-panic.log");
+        let prev_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            use std::io::Write;
+            if let Ok(mut f) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&panic_log)
+            {
+                let _ = writeln!(
+                    f,
+                    "{} {info}\n{}",
+                    chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+                    std::backtrace::Backtrace::force_capture()
+                );
+            }
+            prev_hook(info);
+        }));
+    }
+
     // ── Daemon child mode ────────────────────────────────────────────────────
     // When spawned with --daemon-child, run the daemon main loop directly.
     if cli.daemon_child {
@@ -342,7 +369,7 @@ fn main() -> anyhow::Result<()> {
                 initial_app: Some(app),
                 ..Default::default()
             };
-            aitrace::tui::run_tui_with_options(project_path, config, options)?;
+            run_tui_guarded(project_path, config, options)?;
         }
 
         // ── Import: import a past Claude Code session ─────────────────────────
@@ -533,39 +560,51 @@ fn main() -> anyhow::Result<()> {
             }
 
             // Ensure terminal is restored even on panic.
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                aitrace::tui::run_tui_with_options(project_path, config, options)
-            }));
-
-            match result {
-                Ok(Ok(())) => {}
-                Ok(Err(e)) => {
-                    // Normal error -- terminal already restored by run_tui
-                    eprintln!("error: {e}");
-                    std::process::exit(1);
-                }
-                Err(panic_info) => {
-                    // Panic -- force restore terminal
-                    let _ = crossterm::terminal::disable_raw_mode();
-                    let _ = crossterm::execute!(
-                        std::io::stdout(),
-                        crossterm::terminal::LeaveAlternateScreen,
-                        crossterm::cursor::Show
-                    );
-                    eprintln!("aitrace crashed. Your terminal has been restored.");
-                    if let Some(msg) = panic_info.downcast_ref::<&str>() {
-                        eprintln!("panic: {msg}");
-                    } else if let Some(msg) = panic_info.downcast_ref::<String>() {
-                        eprintln!("panic: {msg}");
-                    }
-                    eprintln!("Please report this at https://github.com/raystyle/aitrace/issues");
-                    std::process::exit(1);
-                }
-            }
+            run_tui_guarded(project_path, config, options)?;
         }
     }
 
     Ok(())
+}
+
+/// Run the TUI with panic protection shared by the live and replay paths:
+/// a panic restores the terminal instead of leaving a dead frame with the
+/// shell drawing over it, and the details are already in tui-panic.log via
+/// the global hook.
+fn run_tui_guarded(
+    project_path: PathBuf,
+    config: Config,
+    options: RunOptions,
+) -> anyhow::Result<()> {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        aitrace::tui::run_tui_with_options(project_path, config, options)
+    }));
+
+    match result {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(e)) => {
+            // Normal error -- terminal already restored by run_tui
+            eprintln!("error: {e}");
+            std::process::exit(1);
+        }
+        Err(panic_info) => {
+            // Panic -- force restore terminal
+            let _ = crossterm::terminal::disable_raw_mode();
+            let _ = crossterm::execute!(
+                std::io::stdout(),
+                crossterm::terminal::LeaveAlternateScreen,
+                crossterm::cursor::Show
+            );
+            eprintln!("aitrace crashed. Your terminal has been restored.");
+            if let Some(msg) = panic_info.downcast_ref::<&str>() {
+                eprintln!("panic: {msg}");
+            } else if let Some(msg) = panic_info.downcast_ref::<String>() {
+                eprintln!("panic: {msg}");
+            }
+            eprintln!("panic details written to <project>/.aitrace/tui-panic.log");
+            std::process::exit(1);
+        }
+    }
 }
 
 /// Windows binaries default to the console subsystem, so hook/MCP/daemon

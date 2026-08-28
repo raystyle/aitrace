@@ -168,12 +168,15 @@ impl Widget for RestoreConfirmDialog<'_> {
 }
 
 /// Truncate a string to at most `max_len` characters, adding "..." if truncated.
+/// Characters, not bytes: byte slicing panics mid-multi-byte-char.
 fn truncate_str(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
+    if s.chars().count() <= max_len {
         s.to_string()
     } else if max_len > 3 {
-        format!("{}...", &s[..max_len - 3])
+        let mut out: String = s.chars().take(max_len - 3).collect();
+        out.push_str("...");
+        out
     } else {
-        s[..max_len].to_string()
+        s.chars().take(max_len).collect()
     }
 }

@@ -257,8 +257,13 @@ fn build_file_row(
     color: ratatui::style::Color,
 ) -> Line<'static> {
     let name_col = total_width.saturating_sub(24);
-    let display = if name.len() > name_col {
-        format!("{}...", &name[..name_col.saturating_sub(3)])
+    // Character-aware truncation: file names can be any UTF-8.
+    let display = if name.chars().count() > name_col && name_col > 3 {
+        let mut out: String = name.chars().take(name_col - 3).collect();
+        out.push_str("...");
+        out
+    } else if name.chars().count() > name_col {
+        name.chars().take(name_col).collect()
     } else {
         name.to_string()
     };
