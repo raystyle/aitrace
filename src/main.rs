@@ -15,7 +15,7 @@ use aitrace::tui::{App, PlaybackState, RunOptions};
 #[command(
     name = "aitrace",
     about = "Trace, replay, and rewind AI coding edits",
-    version
+    version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("AITRACE_BUILD_HASH"), ")")
 )]
 struct Cli {
     /// Project directory to watch (defaults to current directory)
@@ -165,6 +165,14 @@ fn main() -> anyhow::Result<()> {
 
                                 println!("pid:       {}", pid);
                                 println!("session:   {}", session);
+                                println!(
+                                    "version:   {} ({})",
+                                    value.get("version").and_then(|v| v.as_str()).unwrap_or("?"),
+                                    value
+                                        .get("build_hash")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("?")
+                                );
                                 println!("uptime:    {}s", uptime);
                                 println!("edits:     {}", edits);
                                 println!("agents:    {}", agents);

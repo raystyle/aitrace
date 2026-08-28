@@ -18,7 +18,7 @@ allowed-tools: Read Grep Glob Bash(cargo test *) Bash(cargo build *) mcp__aitrac
 
 1. **构建前先停 daemon**——daemon 子进程从 `target\debug\aitrace.exe` 运行，锁住链接器输出（否则 os error 5）
 2. `target\debug\aitrace.exe daemon start` 把新 exe 装进 `.aitrace/bin/`（目标被锁时自动改名 `aitrace.exe.old` 让路，常驻 MCP server 不会阻塞更新）
-3. **MCP server 进程不会自动升级**——它持续运行旧二进制直到重连。`initialize` 回报 `serverInfo.version`（crate 版本），用 `/mcp` 查看；版本过期则**提醒人类重连 MCP（或重启 Claude Code）**，之后再验收 MCP 侧改动
+3. **MCP server 进程不会自动升级**——它持续运行旧二进制直到重连。机检方式：`initialize` 回报 `serverInfo.buildHash`（git 短哈希 + `-dirty`），与当前 `git rev-parse --short HEAD` 比对；不一致则**提醒人类重连 MCP（或重启 Claude Code）**，之后再验收 MCP 侧改动。`daemon status` 的 `version/build_hash` 行同理核对 daemon
 4. 报告必须写明哈希 + 版本号
 
 ## 工作流

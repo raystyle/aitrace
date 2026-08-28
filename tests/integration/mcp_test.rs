@@ -103,8 +103,13 @@ fn test_mcp_tools_call_list_sessions() {
     let mut stdin = child.stdin.take().unwrap();
     let mut stdout = BufReader::new(child.stdout.take().unwrap());
 
-    // Initialize first
-    let _resp = send_request(&mut stdin, &mut stdout, "initialize", 1, json!({}));
+    // Initialize first -- the build hash must be present so "which binary"
+    // checks are mechanical.
+    let resp = send_request(&mut stdin, &mut stdout, "initialize", 1, json!({}));
+    let build_hash = resp["result"]["serverInfo"]["buildHash"]
+        .as_str()
+        .expect("serverInfo.buildHash must be a string");
+    assert!(!build_hash.is_empty(), "build hash must not be empty");
 
     // Call list_sessions tool
     let resp = send_request(

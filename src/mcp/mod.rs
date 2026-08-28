@@ -48,7 +48,8 @@ pub fn run_mcp_server(project_path: PathBuf) -> Result<()> {
                     },
                     "serverInfo": {
                         "name": "aitrace-mcp",
-                        "version": env!("CARGO_PKG_VERSION")
+                        "version": env!("CARGO_PKG_VERSION"),
+                        "buildHash": crate::build_hash()
                     }
                 }),
             ),

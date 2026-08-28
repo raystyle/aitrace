@@ -1,5 +1,11 @@
 #![allow(clippy::collapsible_if)]
 
+/// Build identifier (`git short hash` plus `-dirty` when the worktree has
+/// uncommitted changes), injected by `build.rs`.
+pub fn build_hash() -> &'static str {
+    env!("AITRACE_BUILD_HASH")
+}
+
 pub mod analysis;
 pub mod auto_detect;
 pub mod checkpoint;

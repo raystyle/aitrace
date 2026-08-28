@@ -526,6 +526,8 @@ fn handle_socket_message(
                 "type": "status",
                 "pid": my_pid,
                 "session_id": session.id,
+                "version": env!("CARGO_PKG_VERSION"),
+                "build_hash": crate::build_hash(),
                 "uptime_secs": uptime_secs,
                 "edit_count": edit_count,
                 "agents": agents,
