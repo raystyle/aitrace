@@ -1,5 +1,23 @@
 use std::collections::{HashMap, VecDeque};
+use std::path::Path;
 use std::time::Instant;
+
+/// Canonical key for correlating hook payloads with watcher events.
+///
+/// Hooks report the file as Claude Code sees it (typically an absolute path),
+/// while watcher events are project-relative. Normalize both to a
+/// project-relative, forward-slash path so they land on the same queue.
+/// On Windows the key is lowercased as well, since paths are case-insensitive
+/// and the two sides may not agree on casing.
+pub fn correlation_key(path: &str, project_root: &Path) -> String {
+    let rel = Path::new(path)
+        .strip_prefix(project_root)
+        .unwrap_or(Path::new(path));
+    let key = rel.to_string_lossy().replace('\\', "/");
+    #[cfg(windows)]
+    let key = key.to_lowercase();
+    key
+}
 
 /// Payload extracted from a hook message, describing an agent's intent for a
 /// file edit.
@@ -221,5 +239,24 @@ mod tests {
 
         let b = c.pop_enrichment("b.rs").unwrap();
         assert_eq!(b.agent_id, "a2");
+    }
+
+    #[test]
+    fn correlation_key_normalizes_hook_and_watcher_paths() {
+        let project = Path::new("/proj");
+        let hook_path = "/proj/src/app.rs";
+        let watcher_path = "src\\app.rs";
+        assert_eq!(
+            correlation_key(hook_path, project),
+            correlation_key(watcher_path, project)
+        );
+        assert_eq!(correlation_key(hook_path, project), "src/app.rs");
+    }
+
+    #[test]
+    fn correlation_key_keeps_unrelated_paths_relative() {
+        // Paths outside the project stay whole (no bogus stripping).
+        let project = Path::new("/proj");
+        assert_eq!(correlation_key("/other/app.rs", project), "/other/app.rs");
     }
 }

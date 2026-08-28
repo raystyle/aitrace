@@ -115,8 +115,11 @@ pub fn run_daemon(project_path: PathBuf, config: Config) -> Result<()> {
                     // Register or update the agent.
                     let ts = Utc::now().timestamp_millis();
                     agent_registry.register_or_update(&payload.agent_id, "claude-code", ts);
-                    // Push enrichment for correlation.
-                    correlator.push_enrichment(&file, payload);
+                    // Push enrichment for correlation. Hooks report absolute
+                    // paths while watcher events are project-relative, so both
+                    // sides are normalized to the same canonical key.
+                    let key = correlation::correlation_key(&file, &project_path);
+                    correlator.push_enrichment(&key, payload);
                 }
 
                 SocketMessage::RestoreStart { restore_id, files } => {
@@ -191,7 +194,9 @@ pub fn run_daemon(project_path: PathBuf, config: Config) -> Result<()> {
                     restore_id: Some(restore_id),
                     ..Default::default()
                 })
-            } else if let Some(hook) = correlator.pop_enrichment(&rel_path) {
+            } else if let Some(hook) =
+                correlator.pop_enrichment(&correlation::correlation_key(&rel_path, &project_path))
+            {
                 let label = agent_registry
                     .get(&hook.agent_id)
                     .map(|info| info.agent_label.clone());
