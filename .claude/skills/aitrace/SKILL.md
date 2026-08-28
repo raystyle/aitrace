@@ -66,6 +66,14 @@ allowed-tools: Read Grep Glob Bash(cargo test *) Bash(cargo build *) mcp__aitrac
 2. 再跑一次 `get_timeline` 确认修复被记录
 3. 报告：发现了什么、哪一帧引入、修了什么
 
+### 阶段 7：沉淀时间线记忆（每轮工作收尾）
+
+1. `get_timeline` 拉当前会话，按 `operation_id` 分组操作，读取每组的 `operation_intent`（想干什么）与 `intent`（用户要求）
+2. 汇总文件修改分析：编辑次数、±行数、热点文件
+3. 写入 `docs/timeline/<YYYY-MM-DD>.md`（同日追加，中文），含五节：**今日轨迹**（会话→提交的叙事）、**操作意图时间线**、**文件修改分析**、**经验教训 → 代码与 SKILL 改进项**、**待办**
+4. 教训若指向流程或工具缺陷，**同步修订本 SKILL 或 CLAUDE.md**——完成"记录 → 改进"闭环，而不是只记不用
+5. 新会话开工先读最新的记忆文件，继承上下文与待办
+
 ## 提示
 
 - `search_edits` 用 regex 找触及某函数/变量的历史帧

@@ -22,11 +22,12 @@ aitrace mcp
 3. **MCP server 不随部署升级**：涉及 `src/mcp/` 的改动，验收前提醒人类重连 `/mcp`（serverInfo.version 应为新版本）。
 4. **验收标记**：每次回归 / 验收报告必须写 git 短哈希 + crate 版本。完整流程见 `.claude/skills/aitrace/SKILL.md` 的「受测二进制的验证」。
 
-## 自举纪律（自迭代进化）
+## 自举 · 自愈 · 自迭代 · 自进化
 
-- 本项目**必须通过自身的 aitrace 功能回归与验收测试**：改动后跑 `cargo test`，并用 MCP 工具验证录制链路——新编辑帧应携带 `agent_label` / `operation_id` / 双 intent 字段，且无 `*.tmp.*` 噪音帧。
-- 测试失败或编辑序列出问题时，**调用 `/aitrace`，不要靠猜**：用 MCP 工具（`get_regression_window`、`diff_frames` 等）定位坏帧，而不是重读整棵树。
-- 发现自身缺陷 → 修复 → 补回归测试 → 重新部署验收，如此循环（吃自己的狗粮，测试随能力进化）。
+- **自举**：用 aitrace 开发 aitrace。改动必须通过自身的功能回归与验收测试——`cargo test` 全绿，并用 MCP 验证录制链路：新编辑帧携带 `agent_label` / `operation_id` / 双 intent 字段，无 `*.tmp.*` 噪音帧。
+- **自愈**：测试失败或行为回归时**调用 `/aitrace`，不要靠猜**：用 MCP 工具（`get_regression_window`、`diff_frames` 等）定位坏帧后外科手术式修复，不整段回滚、不重读整棵树。
+- **自迭代**：缺陷 → 修复 → 补回归测试 → 重新部署验收，循环推进，测试随能力进化。
+- **自进化**：每轮工作收尾，按 SKILL「阶段 7」用 MCP 查询操作意图、分析文件修改，形成时间线记忆文件 `docs/timeline/<日期>.md`（同日追加）。经验教训必须转化为**代码改进项或 SKILL / CLAUDE.md 规则修订**——工具与流程随使用不断进化。新会话开工前先读最新记忆文件继承上下文。
 
 ## MCP 工具
 
