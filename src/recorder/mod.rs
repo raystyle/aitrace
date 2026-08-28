@@ -97,12 +97,6 @@ impl Recorder {
         recorder
     }
 
-    /// Append a corrected copy of an already-recorded event (e.g. an intent
-    /// backfill). Consumers deduplicate by id, keeping the last record.
-    pub fn append_correction(&self, event: &EditEvent) -> Result<()> {
-        self.edit_log.append(event)
-    }
-
     /// Retrieve baseline content from the previous session's snapshot store.
     fn baseline_content(&self, hash: &str) -> Option<String> {
         let store = self.baseline_store.as_ref()?;

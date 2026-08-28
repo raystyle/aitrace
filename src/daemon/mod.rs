@@ -29,10 +29,16 @@ fn pid_path(project_path: &std::path::Path) -> PathBuf {
 }
 
 /// Point tracing at `<project>/.aitrace/daemon.log` (append, DEBUG level).
+/// Rotates the previous log away once it passes 1 MB (one generation kept).
 ///
 /// Best effort: a logging failure must never stop the recorder.
 fn init_logging(vt_dir: &std::path::Path) -> Result<()> {
     let log_path = vt_dir.join("daemon.log");
+    if let Ok(meta) = std::fs::metadata(&log_path) {
+        if meta.len() > 1024 * 1024 {
+            let _ = std::fs::rename(&log_path, vt_dir.join("daemon.log.1"));
+        }
+    }
     let file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -56,6 +62,56 @@ fn init_logging(vt_dir: &std::path::Path) -> Result<()> {
 /// inside a log macro kills the daemon.
 fn head(s: &str, n: usize) -> String {
     s.chars().take(n).collect()
+}
+
+/// One pending intent backfill: the recorded event plus the session log it
+/// belongs to. Corrections must be appended to their **origin** session's
+/// edits.jsonl -- event ids are per-session, so writing them into a newer
+/// session's log would collide with that session's own ids.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct BackfillItem {
+    session_dir: PathBuf,
+    event: crate::event::EditEvent,
+}
+
+/// Persist the pending intent-backfill queue in the current session
+/// directory so a daemon restart keeps waiting-for-late-parents work alive.
+fn save_backfill(session_dir: &std::path::Path, queue: &[BackfillItem]) {
+    let path = session_dir.join("backfill.json");
+    if queue.is_empty() {
+        let _ = std::fs::remove_file(&path);
+        return;
+    }
+    if let Ok(json) = serde_json::to_string(queue) {
+        let _ = std::fs::write(&path, json);
+    }
+}
+
+/// Load the queue left behind by the most recent prior session (sessions
+/// without one are skipped), then take ownership of the file.
+fn load_backfill(sessions_dir: &std::path::Path, current_id: &str) -> Vec<BackfillItem> {
+    let mut dirs: Vec<PathBuf> = std::fs::read_dir(sessions_dir)
+        .map(|rd| {
+            rd.filter_map(|e| e.ok())
+                .map(|e| e.path())
+                .filter(|p| {
+                    p.is_dir() && p.file_name().and_then(|n| n.to_str()) != Some(current_id)
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    dirs.sort();
+    dirs.reverse();
+    for dir in dirs {
+        let path = dir.join("backfill.json");
+        if let Ok(text) = std::fs::read_to_string(&path) {
+            if let Ok(items) = serde_json::from_str::<Vec<BackfillItem>>(&text) {
+                let _ = std::fs::remove_file(&path);
+                return items;
+            }
+        }
+    }
+    Vec::new()
 }
 
 fn sock_path(project_path: &std::path::Path) -> PathBuf {
@@ -148,7 +204,15 @@ pub fn run_daemon(project_path: PathBuf, config: Config) -> Result<()> {
     let mut intent_index = intent_index::IntentIndex::new();
     // Edits recorded with a missing operation intent, awaiting a transcript
     // parent that lands late (Claude Code writes assistant entries lazily).
-    let mut intent_backfill: Vec<crate::event::EditEvent> = Vec::new();
+    // Persisted across daemon restarts; corrections go back to the origin
+    // session's log.
+    let mut intent_backfill: Vec<BackfillItem> = load_backfill(&sessions_dir, &session.id);
+    if !intent_backfill.is_empty() {
+        tracing::info!(
+            "restored {} pending intent backfills from previous runs",
+            intent_backfill.len()
+        );
+    }
 
     // Channel for sending EditEvents (Recorder requires one, but the daemon
     // doesn't consume them through the channel -- it uses them inline).
@@ -191,33 +255,37 @@ pub fn run_daemon(project_path: PathBuf, config: Config) -> Result<()> {
 
         // 7a'. Intent backfill pass: transcript refreshes during the socket
         // drain may have resolved intents for edits that were recorded
-        // before their parent text landed. Corrected copies are appended;
-        // read_all deduplicates by id keeping the last record.
+        // before their parent text landed. Corrected copies are appended to
+        // their ORIGIN session's log (ids are per-session); read_all
+        // deduplicates by id keeping the last record.
         if !intent_backfill.is_empty() {
             let mut still_pending = Vec::new();
-            for mut ev in intent_backfill.drain(..) {
+            for mut item in intent_backfill.drain(..) {
                 let mut resolved = false;
-                if let Some(op) = ev.operation_id.as_deref() {
+                if let Some(op) = item.event.operation_id.as_deref() {
                     if let Some(tool_use_id) = intent_index::tool_use_id_from_operation(op) {
                         if let Some(intent) = intent_index.operation_intent(tool_use_id) {
-                            ev.operation_intent = Some(intent);
-                            if ev.intent.is_none() {
-                                ev.intent = intent_index.user_prompt();
+                            item.event.operation_intent = Some(intent);
+                            if item.event.intent.is_none() {
+                                item.event.intent = intent_index.user_prompt();
                             }
-                            resolved = recorder.append_correction(&ev).is_ok();
+                            let origin_log = crate::snapshot::edit_log::EditLog::new(
+                                item.session_dir.join("edits.jsonl"),
+                            );
+                            resolved = origin_log.append(&item.event).is_ok();
                             if resolved {
                                 tracing::info!(
                                     "backfill: edit #{} {} intent={:?}",
-                                    ev.id,
-                                    ev.file,
-                                    ev.operation_intent.as_deref().map(|s| head(s, 60))
+                                    item.event.id,
+                                    item.event.file,
+                                    item.event.operation_intent.as_deref().map(|s| head(s, 60))
                                 );
                             }
                         }
                     }
                 }
                 if !resolved {
-                    still_pending.push(ev);
+                    still_pending.push(item);
                 }
             }
             intent_backfill = still_pending;
@@ -227,10 +295,19 @@ pub fn run_daemon(project_path: PathBuf, config: Config) -> Result<()> {
                 tracing::debug!("backfill queue over cap, aging out {drop_n} entries");
                 intent_backfill.drain(0..drop_n);
             }
+            save_backfill(&session.dir, &intent_backfill);
         }
 
         // 7b. Drain file changes.
         while let Ok(abs_path) = fs_rx.try_recv() {
+            // Directory events (a created folder, mostly) carry no content
+            // and never match a hook -- skip instead of burning a grace
+            // window on them. Non-existent paths fall through: they are how
+            // deletions reach the recorder.
+            if abs_path.exists() && abs_path.is_dir() {
+                continue;
+            }
+
             // Compute relative path for correlation lookup.
             let rel_path = abs_path
                 .strip_prefix(&project_path)
@@ -360,7 +437,11 @@ pub fn run_daemon(project_path: PathBuf, config: Config) -> Result<()> {
                     if result.event.operation_id.is_some()
                         && result.event.operation_intent.is_none()
                     {
-                        intent_backfill.push(result.event.clone());
+                        intent_backfill.push(BackfillItem {
+                            session_dir: session.dir.clone(),
+                            event: result.event.clone(),
+                        });
+                        save_backfill(&session.dir, &intent_backfill);
                     }
 
                     // Broadcast to subscribers.
@@ -744,5 +825,72 @@ mod log_tests {
         assert_eq!(head(&chinese, 60).chars().count(), 60);
         assert_eq!(head("plain ascii", 5), "plain");
         assert_eq!(head("short", 100), "short");
+    }
+}
+
+#[cfg(test)]
+mod backfill_tests {
+    use super::*;
+
+    fn sample_event(id: u64) -> crate::event::EditEvent {
+        crate::event::EditEvent {
+            id,
+            ts: 1_700_000_000_000,
+            file: "src/a.rs".to_string(),
+            kind: crate::event::EditKind::Modify,
+            patch: String::new(),
+            before_hash: None,
+            after_hash: "h".to_string(),
+            intent: None,
+            tool: None,
+            lines_added: 1,
+            lines_removed: 0,
+            agent_id: Some("s".to_string()),
+            agent_label: Some("claude-code-1".to_string()),
+            operation_id: Some("s:call_x".to_string()),
+            operation_intent: None,
+            tool_name: Some("Edit".to_string()),
+            restore_id: None,
+        }
+    }
+
+    #[test]
+    fn backfill_queue_survives_save_load_handoff() {
+        let tmp = tempfile::tempdir().unwrap();
+        let sessions = tmp.path().join("sessions");
+        let old_session = sessions.join("20260828-070000-000001");
+        std::fs::create_dir_all(&old_session).unwrap();
+
+        save_backfill(
+            &old_session,
+            &[BackfillItem {
+                session_dir: old_session.clone(),
+                event: sample_event(7),
+            }],
+        );
+        assert!(old_session.join("backfill.json").exists());
+
+        // A restarted daemon picks the queue up and takes file ownership.
+        let loaded = load_backfill(&sessions, "20260828-080000-000002");
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].event.id, 7);
+        assert_eq!(loaded[0].session_dir, old_session);
+        assert!(
+            !old_session.join("backfill.json").exists(),
+            "loading must take ownership of the queue file"
+        );
+
+        // Saving an empty queue removes the file entirely.
+        let other = sessions.join("20260828-090000-000003");
+        std::fs::create_dir_all(&other).unwrap();
+        save_backfill(
+            &other,
+            &[BackfillItem {
+                session_dir: other.clone(),
+                event: sample_event(8),
+            }],
+        );
+        save_backfill(&other, &[]);
+        assert!(!other.join("backfill.json").exists());
     }
 }
