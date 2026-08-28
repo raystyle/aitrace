@@ -123,8 +123,9 @@ fn load_backfill(sessions_dir: &std::path::Path, current_id: &str) -> Vec<Backfi
 ///
 /// This is the entry point called by `--daemon-child`. It:
 /// 1. Creates a new session.
-/// 2. Writes the PID file.
-/// 3. Starts the file watcher and socket listener.
+/// 2. Binds the socket listener, then writes the PID file (the ready
+///    signal -- the socket must already accept connections when it appears).
+/// 3. Starts the file watcher.
 /// 4. Enters the main loop processing file changes and socket messages.
 /// 5. Cleans up on shutdown.
 pub fn run_daemon(project_path: PathBuf, config: Config) -> Result<()> {
@@ -148,12 +149,25 @@ pub fn run_daemon(project_path: PathBuf, config: Config) -> Result<()> {
     let sock_file = sock_path(&project_path);
     let my_pid = std::process::id() as i32;
 
-    // 2. Write PID file so the parent process (and future CLI commands) can
+    // 2. Bind the socket listener BEFORE writing the PID file. The PID
+    //    file is the daemon-ready signal for the CLI and tests: a client
+    //    that connects as soon as it appears must find the socket bound.
+    //    (On Linux the pid file is visible the instant it is written,
+    //    which exposed the old bind-later window as ENOENT on connect.)
+    let (sock_tx, sock_rx) = mpsc::channel::<SocketMessage>();
+    let sock_file_clone = sock_file.clone();
+    let _listener_thread = std::thread::spawn(move || {
+        if let Err(e) = hook_listener::listen(&sock_file_clone, sock_tx) {
+            tracing::error!("socket listener error: {}", e);
+        }
+    });
+
+    // 3. Write PID file so the parent process (and future CLI commands) can
     //    discover this daemon.
     pid::write_pid_file(&pid_file, my_pid, &session.id)?;
     tracing::info!("daemon session {} starting (pid {my_pid})", session.id);
 
-    // 3. Create the recorder, inheriting the baseline from the most recent
+    // 4. Create the recorder, inheriting the baseline from the most recent
     //    session that actually recorded edits (immediately preceding
     //    sessions may have crashed or recorded nothing). Known files then
     //    record as `modify` (not `create`) after a daemon restart and their
@@ -170,7 +184,7 @@ pub fn run_daemon(project_path: PathBuf, config: Config) -> Result<()> {
         prev_session_dir
     );
 
-    // 4. Start file watcher.
+    // 5. Start file watcher.
     let (fs_tx, fs_rx) = mpsc::channel::<PathBuf>();
     let mut watcher = FsWatcher::with_ignore(
         project_path.clone(),
@@ -180,16 +194,7 @@ pub fn run_daemon(project_path: PathBuf, config: Config) -> Result<()> {
     )?;
     watcher.start()?;
 
-    // 5. Start socket listener thread.
-    let (sock_tx, sock_rx) = mpsc::channel::<SocketMessage>();
-    let sock_file_clone = sock_file.clone();
-    let _listener_thread = std::thread::spawn(move || {
-        if let Err(e) = hook_listener::listen(&sock_file_clone, sock_tx) {
-            tracing::error!("socket listener error: {}", e);
-        }
-    });
-
-    // 5b. If this project already has `.claude/`, keep a local PostToolUse
+    // 6. If this project already has `.claude/`, keep a local PostToolUse
     // hook in settings.local.json unless committed settings.json already
     // defines the aitrace handler.
     let claude_dir = project_path.join(".claude");
@@ -199,7 +204,7 @@ pub fn run_daemon(project_path: PathBuf, config: Config) -> Result<()> {
         }
     }
 
-    // 6. Create correlator, agent registry, and transcript intent index.
+    // 7. Create correlator, agent registry, and transcript intent index.
     let mut correlator = Correlator::new();
     let mut agent_registry = AgentRegistry::new();
     let mut intent_index = intent_index::IntentIndex::new();
@@ -224,7 +229,7 @@ pub fn run_daemon(project_path: PathBuf, config: Config) -> Result<()> {
     let mut edit_count: u64 = 0;
     let mut subscribers: Vec<ipc::UnixStream> = Vec::new();
 
-    // 7. Main loop.
+    // 8. Main loop.
     loop {
         let mut should_stop = false;
 
@@ -309,11 +314,10 @@ pub fn run_daemon(project_path: PathBuf, config: Config) -> Result<()> {
                 continue;
             }
 
-            // Compute relative path for correlation lookup.
-            let rel_path = abs_path
-                .strip_prefix(&project_path)
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|_| abs_path.to_string_lossy().to_string());
+            // Compute relative path for correlation lookup. relativize
+            // tolerates prefix-form mismatches (macOS FSEvents reports
+            // /private/var/... for a /var/... project root).
+            let rel_path = correlation::relativize(&abs_path.to_string_lossy(), &project_path);
 
             // Build enrichment: restore takes precedence over hook.
             let rel_key = correlation::correlation_key(&rel_path, &project_path);

@@ -2,6 +2,28 @@ use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 use std::time::Instant;
 
+/// Relativize `path` against `project_root`, normalizing separators.
+///
+/// Falls back to the canonicalized root when the raw prefix does not match:
+/// macOS FSEvents reports resolved paths (`/private/var/...` for
+/// `/var/...`), so watcher events can carry a different prefix form than
+/// the project root the daemon was given. On Windows the raw strip always
+/// succeeds, so the canonical fallback (and its `\\?\` verbatim forms)
+/// never comes into play.
+pub fn relativize(path: &str, project_root: &Path) -> String {
+    let canon = std::fs::canonicalize(project_root).ok();
+    relativize_with(path, project_root, canon.as_deref())
+}
+
+fn relativize_with(path: &str, project_root: &Path, canonical_root: Option<&Path>) -> String {
+    let p = Path::new(path);
+    let rel: Option<&Path> = p
+        .strip_prefix(project_root)
+        .ok()
+        .or_else(|| canonical_root.and_then(|canon| p.strip_prefix(canon).ok()));
+    rel.unwrap_or(p).to_string_lossy().replace('\\', "/")
+}
+
 /// Canonical key for correlating hook payloads with watcher events.
 ///
 /// Hooks report the file as Claude Code sees it (typically an absolute path),
@@ -10,10 +32,7 @@ use std::time::Instant;
 /// On Windows the key is lowercased as well, since paths are case-insensitive
 /// and the two sides may not agree on casing.
 pub fn correlation_key(path: &str, project_root: &Path) -> String {
-    let rel = Path::new(path)
-        .strip_prefix(project_root)
-        .unwrap_or(Path::new(path));
-    let key = rel.to_string_lossy().replace('\\', "/");
+    let key = relativize(path, project_root);
     #[cfg(windows)]
     let key = key.to_lowercase();
     key
@@ -271,5 +290,47 @@ mod tests {
         // Paths outside the project stay whole (no bogus stripping).
         let project = Path::new("/proj");
         assert_eq!(correlation_key("/other/app.rs", project), "/other/app.rs");
+    }
+
+    #[test]
+    fn relativize_falls_back_to_the_canonical_root() {
+        // macOS shape: the daemon is given /var/... but FSEvents reports
+        // /private/var/... (the resolved symlink form). A raw strip fails;
+        // the canonical-root fallback strips. The roots are plain distinct
+        // strings here so the test is symlink-free on every platform.
+        assert_eq!(
+            relativize_with(
+                "/private/var/proj/src/lib.rs",
+                Path::new("/var/proj"),
+                Some(Path::new("/private/var/proj"))
+            ),
+            "src/lib.rs"
+        );
+        // Hook-side shape: payload path in symlink form against a daemon
+        // root that is already resolved -- same fallback, other direction.
+        assert_eq!(
+            relativize_with(
+                "/var/proj/src/lib.rs",
+                Path::new("/private/var/proj"),
+                Some(Path::new("/var/proj"))
+            ),
+            "src/lib.rs"
+        );
+        // No canonical root given (canonicalize failed): behavior matches
+        // the old raw-only strip, unrelated paths stay whole.
+        assert_eq!(
+            relativize_with("/elsewhere/x.rs", Path::new("/var/proj"), None),
+            "/elsewhere/x.rs"
+        );
+    }
+
+    #[test]
+    fn relativize_raw_strip_still_wins() {
+        // The fallback must not change matching behavior: a path already
+        // under the given root relativizes exactly as before.
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let file = root.join("src").join("a.rs");
+        assert_eq!(relativize(&file.to_string_lossy(), root), "src/a.rs");
     }
 }

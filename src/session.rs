@@ -191,9 +191,12 @@ mod tests {
         assert_eq!(metas.len(), 2);
         assert_eq!(metas[0].id, s1.id, "creation order must hold in list()");
         assert_eq!(metas[1].id, s2.id);
+        // Non-decreasing is the contract: on fast platforms (Linux) both
+        // creations can land in the same millisecond, and list() then
+        // orders by the microsecond id suffix.
         assert!(
-            metas[1].started_at > metas[0].started_at,
-            "millisecond resolution expected: {} vs {}",
+            metas[1].started_at >= metas[0].started_at,
+            "started_at went backwards: {} vs {}",
             metas[0].started_at,
             metas[1].started_at
         );
