@@ -27,6 +27,8 @@ impl Default for WatchConfig {
                 "target".to_string(),
                 "__pycache__".to_string(),
                 ".aitrace".to_string(),
+                // Editor atomic-write temp files (e.g. `app.rs.tmp.10032.1a2b3c`)
+                "*.tmp.*".to_string(),
             ],
             auto_checkpoint_every: 25,
         }
