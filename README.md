@@ -1,6 +1,8 @@
 # aitrace
 
-Real-time AI coding session observability. Trace, replay, and understand what your AI assistant is actually doing.
+AI 编程会话的可观测性驾驶舱：记录每一次文件编辑，关联 Claude Code 的会话元数据（agent、工具调用、意图），并通过 MCP 把时间线暴露给 agent——让 agent 能够检查并修正自己引入的回归。
+
+**当前状态：Claude Code · Windows · Beta（v0.6.4）**
 
 ```
 cargo run --release
@@ -8,300 +10,243 @@ cargo run --release
 
 ---
 
-## What is aitrace?
+## 当前状态（Beta）
 
-aitrace is a terminal-based observability cockpit for AI coding sessions. It captures every file change, parses Claude Code's conversation logs, and presents everything in a dense htop-style TUI. You can scrub through time, inspect individual edits, see what Claude was thinking, track token costs, and surgically restore files. It works with Claude Code, Cursor, and Codex CLI out of the box.
+以下能力已在本仓库环境（Windows 10/11 + Claude Code）端到端验证：
 
-## Quick Start
+- **全链路录制**：`PostToolUse` hook → daemon → 快照存储 + 编辑日志，每帧携带 `agent_label`、`operation_id`（`session:tool_use_id`）、`operation_intent`（assistant 声明的意图）、`intent`（触发编辑的用户请求）
+- **MCP server**：7 个 timeline 工具，agent 可直接查询帧、diff、回归窗口
+- **自纠工作流**：`/aitrace` skill，测试失败时按时间线定位回归帧并外科手术式修复
+- **覆盖安装与版本验证**：daemon 停止 → 构建 → 重启的验收流程，MCP 进程重连即升级
+
+以下能力继承自上游（vibetracer），代码保留但**未在本阶段验证**：macOS / Linux、Cursor / Codex CLI 会话导入、git-ai 导出。
+
+---
+
+## 快速开始（Windows）
 
 ```bash
 git clone https://github.com/raystyle/aitrace
 cd aitrace
 cargo build --release
-
-./target/release/aitrace demo                    # interactive demo
-./target/release/aitrace /path/to/your-project   # watch a project
 ```
 
-aitrace auto-starts a background daemon, begins recording, and opens the TUI. Close the TUI and the daemon keeps recording. Reconnect later with `aitrace` and pick up where you left off.
+```powershell
+# 启动后台录制 daemon（独立进程，关终端不影响）
+.aitrace\bin\aitrace.exe daemon start
+.aitrace\bin\aitrace.exe daemon status
+```
+
+在本目录启动 Claude Code：接受工作区信任对话框，然后 `/mcp` 批准 `aitrace` 服务器。此后每次 Write/Edit 都会被记录，`/aitrace` 随时可用。
 
 ---
 
-## Features
+## Claude Code 项目集成
 
-### Cockpit Dashboard
+本仓库自带项目级（非用户级）配置，只在本目录生效：
 
-A dense htop-style dashboard showing everything at a glance. Toggle with `D`.
+| 表面 | 文件 | 说明 |
+| --- | --- | --- |
+| Hook | `.claude/settings.json` | `PostToolUse`（`Write\|Edit`）执行 `<项目>/.aitrace/bin/aitrace.exe hook-send` |
+| MCP | `.mcp.json`（仓库根，不在 `.claude/` 下） | 服务器名 `aitrace`，stdio JSON-RPC |
+| Skill | `.claude/skills/aitrace/SKILL.md` | `/aitrace` 自纠工作流 |
+| 常驻指令 | `CLAUDE.md` | Claude Code 会话级约定 |
 
-- Token and cost tracking with burn rate computed from Claude Code logs
-- Edit velocity graph (edits per minute over the last 60 seconds)
-- File heatmap showing the most-edited files ranked by edit count
-- Agent status indicators (active/idle based on 10-second activity window)
-- Operation progress tracking with per-operation edit counts
-- Blast radius summary: stale, updated, and untouched dependent files
-- Sentinel failure count with rule names and descriptions
-- Watchdog status with per-constant alert details
-- Cache hit rate percentage from Claude's token usage
+Hook 转发的元数据：`session_id`（→ agent 身份）、`tool_use_id`（→ 操作分组）、`transcript_path`（→ 意图解析）。daemon 沿 transcript 的 `parentUuid` 父链回溯出 assistant 声明的操作意图，并从 `last-prompt` 取用户请求。
 
-### Vim-Modal Interface
+在其他项目使用时：daemon 检测到该项目有 `.claude/` 目录即自动在 `settings.local.json`（gitignore）注册本地 PostToolUse hook——除非该项目已提交的 `settings.json` 自行定义了 aitrace 处理器。会话日志（`~/.claude/projects/`）由后台线程解析。
 
-Four modes, each with dedicated keybindings and a context-sensitive status bar:
+---
 
-- **Normal** -- default mode for navigation, scrubbing, and panel toggles
-- **Timeline** (`t`) -- focused timeline manipulation with zoom, pan, and track selection
-- **Inspect** (`i`) -- deep-dive into individual edits with diff/file/conversation views
-- **Search** (`/`) -- composable filter syntax to narrow edits across the entire session
+## MCP 工具
 
-The mode indicator displays in the status bar. A command palette (`:` or `Ctrl+P`) provides fuzzy search across all actions with MRU ordering.
+```bash
+aitrace mcp   # 启动 stdio JSON-RPC 服务器
+```
 
-### Claude Code Integration
+| 工具 | 说明 |
+| --- | --- |
+| `list_sessions` | 列出已录制会话及元数据 |
+| `get_timeline` | 编辑时间线（分页，可按文件过滤；含双 intent 字段） |
+| `get_frame` | 重建任意时间点的文件精确状态 |
+| `diff_frames` | 任意两帧之间的 unified diff |
+| `search_edits` | 按 regex 查找触及某模式的历史帧 |
+| `get_regression_window` | 圈定疑似回归的候选帧区间 |
+| `subscribe_edits` | 订阅实时编辑通知 |
 
-This repository ships project-scoped Claude Code config (hooks, MCP, skill). It only loads when you start Claude Code in this folder.
+---
 
-- `.claude/settings.json` — `PostToolUse` hook on `Write|Edit` runs `<project>/.aitrace/bin/aitrace.exe hook-send`
-- `.mcp.json` — stdio MCP server `aitrace` (`<project>/.aitrace/bin/aitrace.exe mcp`)
-- `.claude/skills/aitrace/SKILL.md` — `/aitrace` self-correction workflow
-- `CLAUDE.md` — standing instructions for Claude Code
+## 验收与回归流程（本项目的核心纪律）
 
-On first launch, accept the workspace trust dialog and approve the `aitrace` MCP server (`/mcp`). Keep the recorder running with `aitrace daemon start`.
+每次回归 / 验收必须能回答"测的是哪个构建"：
 
-When Claude Code's `.claude/` directory is detected in other projects, the daemon registers a local `PostToolUse` hook in `.claude/settings.local.json` unless a committed settings file already defines one. Conversation logs under `~/.claude/projects/` are parsed in a background thread.
+1. **先停 daemon 再构建**——daemon 子进程从 `target\debug\aitrace.exe` 运行，否则链接器报 os error 5
+2. `target\debug\aitrace.exe daemon start` 自动把新 exe 装进 `.aitrace/bin/`（目标被锁时改名 `aitrace.exe.old` 让路）
+3. **MCP server 不会自动升级**——`initialize` 回报 `serverInfo.version`（crate 版本），`/mcp` 检查；版本过期须重连 MCP（或重启 Claude Code）后再验收 MCP 侧改动
+4. 报告必须写明 **git 短哈希 + 小版本号**
 
-- User prompts and tool call trees parsed in real-time
-- Token usage per turn with cost estimates (input, output, cache read)
-- Cache hit rate tracking
-- Conversation panel (`C` key) with navigable turns and tool calls
-- Agent label, operation intent, and the triggering user prompt attached to every edit (resolved from the Claude Code transcript via `parentUuid` chain walk)
+完整流程见 `.claude/skills/aitrace/SKILL.md` 的"受测二进制验证"一节。
 
-### Timeline and Playback
+---
+
+## Cockpit 功能
+
+### 驾驶舱仪表盘（`D` 切换）
+
+htop 风格总览：
+
+- Token 与成本追踪（从 Claude Code 日志计算燃尽率）
+- 编辑速率图（最近 60 秒每分钟编辑数）
+- 文件热力图（按编辑次数排序的最热文件）
+- Agent 状态（10 秒活跃窗口判定 active/idle）
+- 操作进度、爆炸半径摘要、哨兵失败计数、看门狗状态、缓存命中率
+
+### Vim 模态界面
+
+四种模式，状态栏显示当前模式：
+
+- **Normal**（默认）——导航、拖动播放头、面板切换
+- **Timeline**（`t`）——时间线缩放、平移、轨道选择
+- **Inspect**（`i`）——单帧深查：diff / 文件 / 会话上下文
+- **Search**（`/`）——可组合过滤语法
+
+命令面板（`:` 或 `Ctrl+P`）模糊搜索全部动作，MRU 置顶。
+
+### 时间线与回放
 
 ```
 +-- timeline -------------------------------------------------------+
 | src/auth.rs      [====|==  |=====|=  ] ------>                     |
 | src/config.py    [==  |    |=    |   ] ------>                     |
-| src/model.py     [    |====|     |===] ------>                     |
 |                        ^                                           |
 |                     playhead                                       |
 +--------------------------------------------------------------------+
 ```
 
-- Per-file horizontal tracks with edit cells color-coded by agent
-- Global playhead plus independent per-file playheads
-- Detachable file playheads (scrub one file while others stay at global position)
-- Solo and mute tracks to focus on specific files
-- Timeline zoom (`+`/`-`) and pan (arrow keys in Timeline mode)
-- Command view (`g`) groups edits by the AI operation that caused them
-- Multi-agent color coding with per-agent solo filtering (`1`-`9`)
-- Auto-follow (Live mode) with manual pause/play (`Space`)
+- 每文件横向轨道，编辑单元格按 agent 着色
+- 全局播放头 + 独立每文件播放头（可分离拖动）
+- 轨道 Solo / Mute、缩放（`+`/`-`）平移
+- 命令视图（`g`）按 AI 操作分组
+- 实时跟随（Live）与手动暂停/播放（`Space`）
 
-### Investigation Tools
+### 调查工具
 
-**Search and Filter** -- composable syntax with AND logic across predicates:
+**搜索与过滤**（AND 组合语法）：
 
 ```
 file:auth agent:claude kind:modify tool:Edit after:14:30 before:15:00 lines>20 op:refactor content:token
 ```
 
-| Predicate | Description |
-|-----------|-------------|
-| `file:` | Match file path substring |
-| `agent:` | Match agent ID or label |
-| `kind:` | Filter by create, modify, or delete |
-| `tool:` | Match tool name (Edit, Write, etc.) |
-| `after:` | Edits after HH:MM offset or edit ID |
-| `before:` | Edits before HH:MM offset or edit ID |
-| `lines>` / `lines<` | Filter by total lines changed |
-| `op:` | Match operation intent substring |
-| `content:` | Grep through diff content |
-| bare text | Fuzzy match across all fields |
+| 谓词 | 说明 |
+| --- | --- |
+| `file:` | 文件路径子串 |
+| `agent:` | agent ID 或标签 |
+| `kind:` | create / modify / delete |
+| `tool:` | 工具名（Edit、Write 等） |
+| `after:` / `before:` | HH:MM 偏移或编辑 ID |
+| `lines>` / `lines<` | 变更行数过滤 |
+| `op:` | 操作意图子串 |
+| `content:` | grep diff 内容 |
+| 裸文本 | 全字段模糊匹配 |
 
-**Blame View** (`B`) -- per-line agent and operation attribution overlaid on the file preview. Shows which agent wrote each line and what operation triggered it.
+**Blame 视图**（`B`）——文件预览上逐行标注 agent 与操作归属。
 
-**Inline Annotations** (`A`) -- operation intent displayed alongside code. Mutually exclusive with blame view.
+**内联注释**（`A`）——代码旁显示操作意图（与 blame 互斥）。自 v0.6.4 起有真实数据（transcript 意图解析）。
 
-**Session Diff** (`:diff from to`) -- compare two points in the session timeline. Shows per-file change summaries with lines added/removed, edit counts, and which agents touched each file.
+**会话 diff**（`:diff from to`）——时间线上两点间的逐文件变更对比。
 
-**Bookmarks** (`M` to create, `'` to jump) -- mark interesting positions in the timeline for quick navigation. Bookmark list displayed as a popup overlay.
+**书签**（`M` 创建，`'` 跳转）。
 
-### Restore System
+### 恢复系统
 
-Scrubbing is visual. Restoring writes to disk. These are separate actions.
+拖动播放头只是预览；恢复才写盘——两者是独立动作。
 
-- **Restore file** (`R`) -- write the file at the current playhead position to disk
-- **Undo restore** (`u`) -- every restore is logged, reverse the last one
-- **Content-addressed snapshot store** -- every file version stored by SHA-256 hash
-- **Checkpoints** (`c`) -- manual full-project snapshots, plus auto-checkpoints every N edits (configurable)
-- **CLI restore** -- headless restore without opening the TUI: `aitrace restore <file> --edit-id <N>`
+- **恢复文件**（`R`）——把播放头处版本写回磁盘
+- **撤销恢复**（`u`）
+- **内容寻址快照库**——每个版本按 SHA-256 存储
+- **检查点**（`c`）——手动全项目快照 + 每 N 次编辑自动检查点
+- **CLI 恢复**——`aitrace restore <file> --edit-id <N>` 无头恢复
 
-### Analysis Engines
+### 分析引擎
 
-**Blast Radius** (`b`) -- when a file is edited, see which dependent files may need updating. Catches partial refactors where the AI updates 3 of 5 coupled files and moves on. Tracks stale, updated, and untouched dependents.
+- **爆炸半径**（`b`）——文件被改后哪些依赖可能需要同步；抓"改了 3/5 个耦合文件就收工"的半截重构
+- **哨兵**——跨文件不变量规则（如"配置的特征数必须等于模型输入维度"）
+- **看门狗**（`w`）——注册不许变化的常量（物理值、端点、阈值），被改即告警，分 critical / warning / info
+- **可配置告警**——按会话状态触发 toast / flash / bell，条件解除自动重新武装
 
-**Sentinels** -- cross-file invariant rules. Define assertions like "feature count in config must match model input size." aitrace alerts instantly when an edit breaks the invariant.
+### 多智能体与导出（上游能力，未在本阶段验证）
 
-**Watchdog** (`w`) -- register constants that should never change (physics values, API endpoints, config thresholds). Get alerted the moment the AI modifies a watched value. Severity levels: critical, warning, info.
-
-**Configurable Alerts** -- trigger notifications based on session state:
-
-| Condition | Example |
-|-----------|---------|
-| `session_cost > 1.00` | Cost exceeded threshold |
-| `sentinel_failures > 0` | Invariant broken |
-| `stale_count > 3` | Too many stale dependents |
-| `edit_velocity > 10` | Unusually high edit rate |
-| `edit_count > 100` | Large session |
-
-Alert actions: `toast` (status bar), `flash` (screen flash), `bell` (terminal bell). Alerts auto-rearm when the condition becomes false.
-
-### Multi-Agent Support
-
-- Claude Code, Cursor, and Codex CLI all supported
-- Import sessions from any agent
-- Agent color coding on timeline tracks
-- Solo agent filtering (`1`-`9` in command view)
-- Per-agent edit attribution on every event
-- Conflict indicators when two agents edit the same file within 5 seconds
-
-### Export and Integration
-
-**Agent Trace JSON** -- vendor-neutral session export compatible with Cursor and the git-ai ecosystem:
-
-```bash
-aitrace export --format agent-trace <session-id>
-aitrace export --format agent-trace <session-id> --output trace.json
-```
-
-**git-ai compatible git notes** -- attach authorship logs directly to commits:
-
-```bash
-aitrace export --format git-notes <session-id>
-```
-
-**MCP Server** -- 7 tools exposed via Model Context Protocol for AI self-correction:
-
-```bash
-aitrace mcp   # start stdio JSON-RPC server
-```
-
-| MCP Tool | Description |
-|----------|-------------|
-| `list_sessions` | List recorded sessions with metadata and edit counts |
-| `get_timeline` | Get the edit timeline (paginated, filterable by file glob) |
-| `get_frame` | Reconstruct exact file state at any timeline point |
-| `diff_frames` | Unified diff between any two timeline points |
-| `search_edits` | Find frames where a pattern was modified (regex) |
-| `get_regression_window` | Candidate frames for bisecting a regression |
-| `subscribe_edits` | Subscribe to live edit notifications |
-
-All list-returning tools support `offset`/`limit` pagination and stream JSONL lazily.
-
-This repo's Claude Code project config is `.mcp.json` at the root (not under `.claude/`). Other MCP clients can use the same block:
-
-```json
-{
-  "mcpServers": {
-    "aitrace": {
-      "type": "stdio",
-      "command": "${CLAUDE_PROJECT_DIR:-.}/.aitrace/bin/aitrace.exe",
-      "args": ["mcp"]
-    }
-  }
-}
-```
-
-Do not add this as a user-scoped server in `~/.claude.json` if you only want it in this project.
-
-**Claude Code Hook** -- project `.claude/settings.json` captures `Write`/`Edit` tool metadata via `aitrace hook-send`. Other projects get a gitignored local hook when the daemon sees `.claude/`.
+- Claude Code / Cursor / Codex CLI 会话导入
+- Agent 着色、Solo 过滤（`1`-`9`）、冲突指示（5 秒内同文件双 agent）
+- Agent Trace JSON / git-ai git notes 导出
 
 ---
 
-## Keybindings
+## 快捷键
 
-### Normal Mode
+### Normal 模式
 
-| Key | Action |
-|-----|--------|
-| `q` | Quit TUI (daemon keeps running) |
-| `Q` | Quit TUI and stop daemon |
-| `?` | Help overlay |
-| `Space` | Play / pause |
-| `Left` / `Right` | Scrub through edits (global playhead) |
-| `Shift+Left` / `Shift+Right` | Scrub per-file (detaches from global timeline) |
-| `a` | Reattach detached file to global playhead |
-| `t` | Enter Timeline mode |
-| `i` | Enter Inspect mode |
-| `/` | Enter Search mode |
-| `:` or `Ctrl+P` | Open command palette |
-| `g` | Toggle edit view / command view |
-| `d` | Toggle preview mode (file / diff) |
-| `D` | Toggle dashboard panel |
-| `C` | Toggle conversation panel |
-| `B` | Toggle blame view |
-| `A` | Toggle inline annotations |
-| `M` | Create bookmark at current playhead |
-| `'` | Jump to bookmark (popup list) |
-| `R` | Restore file at playhead to disk |
-| `u` | Undo last restore |
-| `c` | Create checkpoint |
-| `x` | Toggle showing restore-generated edits |
-| `s` | Solo track (isolate current file) |
-| `m` | Mute track (hide current file) |
-| `b` | Toggle blast radius panel |
-| `w` | Toggle watchdog panel |
-| `z` | Maximize focused panel |
-| `j` / `k` | Scroll preview down / up |
-| `+` / `=` | Zoom timeline in |
-| `-` | Zoom timeline out |
-| `0` | Reset timeline zoom |
-| `Tab` | Cycle pane focus |
-| `1`-`9` | Solo agent N (command view) |
+| 键 | 动作 |
+| --- | --- |
+| `q` | 退出 TUI（daemon 继续运行） |
+| `Q` | 退出 TUI 并停止 daemon |
+| `?` | 帮助浮层 |
+| `Space` | 播放 / 暂停 |
+| `←` / `→` | 全局播放头逐帧拖动 |
+| `Shift+←` / `Shift+→` | 单文件拖动（脱离全局） |
+| `a` | 重新吸附全局播放头 |
+| `t` / `i` / `/` | 进入 Timeline / Inspect / Search 模式 |
+| `:` 或 `Ctrl+P` | 命令面板 |
+| `g` | 编辑视图 / 命令视图切换 |
+| `d` | 预览模式（文件 / diff） |
+| `D` / `C` / `B` / `A` | 仪表盘 / 会话面板 / blame / 内联注释 |
+| `M` / `'` | 创建书签 / 跳书签 |
+| `R` / `u` / `c` | 恢复 / 撤销恢复 / 检查点 |
+| `x` | 显示/隐藏恢复产生的编辑 |
+| `s` / `m` | Solo / Mute 当前轨道 |
+| `b` / `w` | 爆炸半径 / 看门狗面板 |
+| `z` | 最大化聚焦面板 |
+| `j` / `k` | 预览滚动 |
+| `+` / `-` / `0` | 时间线缩放 / 复位 |
+| `Tab` | 循环切换面板焦点 |
+| `1`-`9` | Solo agent N（命令视图） |
 
-### Timeline Mode (`t` to enter)
+### Timeline 模式（`t` 进入）
 
-| Key | Action |
-|-----|--------|
-| `Esc` | Exit to Normal mode |
-| `Left` / `Right` | Pan timeline |
-| `Up` / `Down` | Select track |
-| `+` / `-` | Zoom in / out |
-| `=` | Reset zoom |
-| `s` | Solo selected track |
-| `m` | Mute selected track |
-| `Enter` | Jump playhead to selected track |
-| `q` | Quit |
+| 键 | 动作 |
+| --- | --- |
+| `Esc` | 返回 Normal |
+| `←` / `→` | 平移时间线 |
+| `↑` / `↓` | 选择轨道 |
+| `+` / `-` / `=` | 缩放 / 复位 |
+| `s` / `m` | Solo / Mute 所选轨道 |
+| `Enter` | 播放头跳到所选轨道 |
 
-### Inspect Mode (`i` to enter)
+### Inspect 模式（`i` 进入）
 
-| Key | Action |
-|-----|--------|
-| `Esc` | Exit to Normal mode |
-| `n` | Next edit |
-| `p` | Previous edit |
-| `d` | Toggle diff view |
-| `f` | Show full file |
-| `c` | Show conversation context |
-| `Enter` | Expand details |
-| `q` | Quit |
+| 键 | 动作 |
+| --- | --- |
+| `Esc` | 返回 Normal |
+| `n` / `p` | 下一帧 / 上一帧 |
+| `d` | diff 视图 |
+| `f` | 完整文件 |
+| `c` | 会话上下文 |
+| `Enter` | 展开详情 |
 
-### Search Mode (`/` to enter)
+### Search 模式（`/` 进入）
 
-| Key | Action |
-|-----|--------|
-| `Esc` | Cancel and exit |
-| `Enter` | Lock filter and return to Normal mode |
-| `Backspace` | Delete character |
-| `Up` / `Down` | Scroll results |
-| Any character | Append to search query |
-
-### Command Palette (`:` or `Ctrl+P`)
-
-Fuzzy search across all available actions. Recently-used entries float to the top. Navigate with arrow keys, confirm with `Enter`, dismiss with `Esc`.
+| 键 | 动作 |
+| --- | --- |
+| `Esc` | 取消退出 |
+| `Enter` | 锁定过滤并返回 Normal |
+| `↑` / `↓` | 滚动结果 |
+| 任意字符 | 追加查询 |
 
 ---
 
-## Configuration
+## 配置
 
-Run `aitrace init` to auto-detect constants, schemas, and dependencies in your project. Configuration lives in `.aitrace/config.toml`.
+`aitrace init` 自动探测常量、schema、依赖。配置在 `.aitrace/config.toml`：
 
 ```toml
 # .aitrace/config.toml
@@ -313,8 +258,9 @@ preset = "tokyo-night"
 debounce_ms = 100
 auto_checkpoint_every = 25
 ignore = [".git", "node_modules", "target", "__pycache__", ".aitrace", "*.tmp.*"]
+# ignore 支持整段路径组件精确匹配与 glob 模式（*.tmp.* 过滤编辑器原子写临时文件）
 
-# Watchdog: alert when registered constants change
+# 看门狗：注册的常量被改即告警
 [[watchdog.constants]]
 pattern = "MAX_RETRIES"
 file = "src/config.rs"
@@ -326,7 +272,7 @@ pattern = 'EARTH_RADIUS_KM\s*=\s*([\d.]+)'
 expected = "6371.0"
 severity = "critical"
 
-# Sentinels: cross-file invariant rules
+# 哨兵：跨文件不变量
 [sentinels.feature_count]
 watch = "src/model.rs"
 assert_eq = "src/features.rs"
@@ -340,16 +286,12 @@ pattern_a = { file = "config.py", regex = 'N_FEATURES\s*=\s*(\d+)' }
 pattern_b = { file = "model.py", regex = 'input_size\s*=\s*(\d+)' }
 assert = "a == b"
 
-# Blast radius: declare file dependencies
+# 爆炸半径：声明文件依赖
 [[blast_radius.manual]]
 source = "src/auth.rs"
 dependents = ["src/session.rs", "src/api/login.rs"]
 
-[[blast_radius.manual]]
-source = "**/config*.py"
-dependents = ["**/model*.py", "**/serving*.py"]
-
-# Configurable alerts
+# 可配置告警
 [[alerts]]
 name = "cost-warning"
 when = "session_cost > 1.00"
@@ -371,106 +313,91 @@ message = "Unusually high edit rate"
 
 ---
 
-## CLI Reference
+## CLI 参考
 
 ```
-aitrace [path]                          Watch directory (default: cwd)
-aitrace demo                            Interactive feature demo
-aitrace replay <session>                Replay a past session
-aitrace sessions                        List past sessions
-aitrace import [session]                Import Claude Code session
-aitrace restore <file> --edit-id <N>    Restore a file to a specific edit
-aitrace export --format agent-trace <session>   Export as Agent Trace JSON
-aitrace export --format git-notes <session>     Export as git-ai git notes
-aitrace mcp                             Start MCP server (stdio JSON-RPC)
-aitrace daemon start|stop|status        Manage background daemon
-aitrace init                            Create config with auto-detection
-aitrace --no-daemon [path]              Single-process mode (no daemon)
-aitrace --debug [path]                  Write debug log for troubleshooting
-```
-
----
-
-## Themes
-
-19 built-in themes. Cycle at runtime with the command palette -- no restart needed.
-
-**Dark themes:** dark (default), catppuccin-mocha, catppuccin-macchiato, gruvbox-dark, tokyo-night, tokyo-night-storm, dracula, nord, kanagawa, rose-pine, one-dark, solarized-dark, everforest-dark
-
-**Light themes:** light, catppuccin-latte, gruvbox-light, solarized-light, rose-pine-dawn, everforest-light
-
-Set a default in config:
-
-```toml
-[theme]
-preset = "tokyo-night"
+aitrace [path]                          监视目录（默认当前目录）
+aitrace demo                            交互式功能演示
+aitrace replay <session>                回放历史会话
+aitrace sessions                        列出历史会话
+aitrace import [session]                导入 Claude Code 会话（上游能力）
+aitrace restore <file> --edit-id <N>    恢复文件到指定编辑
+aitrace export --format agent-trace <session>   导出 Agent Trace JSON（上游能力）
+aitrace export --format git-notes <session>     写 git-ai git notes（上游能力）
+aitrace mcp                             启动 MCP 服务器（stdio JSON-RPC）
+aitrace daemon start|stop|status        管理后台 daemon
+aitrace init                            生成配置（自动探测）
+aitrace --no-daemon [path]              单进程模式
+aitrace --debug [path]                  写调试日志
 ```
 
 ---
 
-## Architecture
+## 主题
+
+19 个内置主题，运行时命令面板切换，无需重启。
+
+**深色**：dark（默认）、catppuccin-mocha、catppuccin-macchiato、gruvbox-dark、tokyo-night、tokyo-night-storm、dracula、nord、kanagawa、rose-pine、one-dark、solarized-dark、everforest-dark
+
+**浅色**：light、catppuccin-latte、gruvbox-light、solarized-light、rose-pine-dawn、everforest-light
+
+---
+
+## 架构
 
 ```
 aitrace
-  daemon/           Background recorder (filesystem watcher + snapshot store + edit log)
-  recorder/         Shared recording logic (used by daemon and --no-daemon mode)
-  snapshot/         Content-addressed file storage (SHA-256) + append-only JSONL edit journal
-  checkpoint/       Full project state snapshots (manual + auto)
-  restore/          File restoration engine + conflict checker
-  analysis/         Blast radius, sentinels, watchdog (evaluated on each edit)
-  tui/              Terminal UI: modal system, dashboard, timeline, preview, panels
-    widgets/        Command palette, conversation panel, dashboard sparklines
-    filter.rs       Composable search/filter engine
-    session_diff.rs Point-in-time session comparison
-    alerts.rs       Configurable alert evaluator with auto-rearm
-    bookmarks.rs    Timeline position bookmarks
-  claude_log/       Claude Code conversation log parser (background thread)
-  hook/             Claude Code PostToolUse hook registration
-  import/           Multi-agent session import (Claude Code, Cursor, Codex CLI)
-  export/           Session export (Agent Trace JSON, git-ai git notes)
-  mcp/              MCP server (JSON-RPC stdio, 7 tools for AI self-correction)
-  theme/            19 color themes with runtime switching
+  daemon/           后台录制器（文件监视 + 快照库 + 编辑日志）
+    correlation.rs  hook↔watcher 事件关联（路径归一化 + FIFO 队列 + HOOK_GRACE 宽限窗口）
+    intent_index.rs Claude Code transcript 增量索引（parentUuid 父链回溯解析意图）
+    agent_registry.rs agent 注册与标签分配
+  recorder/         共享录制逻辑（daemon 与 --no-daemon 模式共用）
+  snapshot/         内容寻址存储（SHA-256）+ 追加式 JSONL 编辑日志
+  checkpoint/       全项目状态检查点（手动 + 自动）
+  restore/          文件恢复引擎 + 冲突检查
+  analysis/         爆炸半径、哨兵、看门狗（每次编辑时评估）
+  tui/              终端 UI：模态系统、仪表盘、时间线、预览、面板
+  claude_log/       Claude Code 会话日志解析（后台线程）
+  hook/             PostToolUse hook 注册 + hook-send（元数据转发）
+  import/           多智能体会话导入（上游能力）
+  export/           会话导出（上游能力）
+  mcp/              MCP 服务器（stdio JSON-RPC，7 个工具）
+  theme/            19 套主题，运行时切换
 ```
 
-The daemon records file changes to an append-only JSONL edit journal in `.aitrace/`. Every file version is stored in a content-addressed snapshot store keyed by SHA-256 hash. The TUI tails the edit log in real-time and renders the cockpit. Claude Code's conversation logs are parsed in a background thread. Analysis engines evaluate on each incoming edit and surface alerts. The layout uses a dynamic panel registry with focus cycling.
+daemon 把变更写入 `.aitrace/` 下的追加式 JSONL 编辑日志；每个文件版本按 SHA-256 存入内容寻址快照库。TUI 实时尾随编辑日志渲染驾驶舱。分析引擎在每条编辑上评估并触发告警。
 
-Data is stored in `.aitrace/` within your project directory. Add it to `.gitignore`.
+数据存在项目目录的 `.aitrace/`（已 gitignore）。
 
 ---
 
-## Design Documents
+## 设计文档
 
-Design notes and research live in [`docs/`](docs/):
+调研与设计笔记在 [`docs/`](docs/)：
 
-| Document | Contents |
+| 文档 | 内容 |
 | --- | --- |
-| [`aitrace-研究.md`](docs/aitrace-研究.md) | Original research: session observability and replay — goals and upstream (`vibetracer`) survey |
-| [`aitrace-windows-支持.md`](docs/aitrace-windows-支持.md) | Windows support design: AF_UNIX via `uds_windows`, hidden daemon |
-| [`claude-code-项目级配置.md`](docs/claude-code-项目级配置.md) | Project-scoped Claude Code integration: hooks, MCP, skills |
-| [`aitrace-review-skill.md`](docs/aitrace-review-skill.md) | Archived first version of the self-correction skill (the live one is `.claude/skills/aitrace/SKILL.md`, invoked as `/aitrace`) |
+| [`aitrace-研究.md`](docs/aitrace-研究.md) | 原始调研：会话可观测与回放——目标与上游（vibetracer）分析 |
+| [`aitrace-windows-支持.md`](docs/aitrace-windows-支持.md) | Windows 支持设计：uds_windows AF_UNIX、隐藏 daemon |
+| [`claude-code-项目级配置.md`](docs/claude-code-项目级配置.md) | Claude Code 项目级集成：hook / MCP / skill |
+| [`aitrace-review-skill.md`](docs/aitrace-review-skill.md) | 自纠 skill 的初版归档（生效版为 `.claude/skills/aitrace/SKILL.md`，命令 `/aitrace`） |
 
 ---
 
-## Installation
+## 安装要求
 
-Build from source. There is no crates.io crate and no Homebrew tap.
+从源码构建。无 crates.io 包，无 Homebrew tap（`publish = false`）。
 
-```bash
-git clone https://github.com/raystyle/aitrace
-cd aitrace
-cargo build --release
-```
-
-The binary is `target/release/aitrace`.
-
-**Requirements:** Rust 1.85+ (edition 2024). macOS, Linux, or Windows 10 1809+ (AF_UNIX).
+- **Rust 1.85+**（edition 2024）
+- **Windows 10 1809+**（AF_UNIX，经 `uds_windows`；不引入命名管道 / TCP / nightly）
+- macOS / Linux 为上游继承能力，本阶段未验证
 
 ---
 
-## Contributing
+## 贡献
 
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
-## License
+## 许可
 
 MIT
