@@ -75,17 +75,17 @@ fn wait_for(pid_file: &Path, timeout: Duration) {
     panic!("daemon pid file did not appear at {:?}", pid_file);
 }
 
-/// Read the single session's edits.jsonl and return the parsed events,
+/// Read the **latest** session's edits.jsonl and return the parsed events,
 /// deduplicated by id keeping the last record (backfill corrections replace
 /// the original line; read_all consumers behave the same way).
 fn recorded_edits(project: &Path) -> Vec<Value> {
     let sessions_dir = project.join(".aitrace").join("sessions");
-    let session_dir = std::fs::read_dir(&sessions_dir)
+    let session_dir: std::path::PathBuf = std::fs::read_dir(&sessions_dir)
         .expect("sessions dir")
-        .next()
-        .expect("one session")
-        .unwrap()
-        .path();
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .max()
+        .expect("at least one session");
     let log = std::fs::read_to_string(session_dir.join("edits.jsonl")).unwrap_or_default();
     let mut events: Vec<Value> = Vec::new();
     let mut positions: std::collections::HashMap<u64, usize> = std::collections::HashMap::new();
@@ -148,6 +148,36 @@ fn wait_for_edit_where(
         }
         std::thread::sleep(Duration::from_millis(50));
     }
+}
+
+/// Edits across ALL sessions (deduplicated per session). Session dir names
+/// collide non-monotonically within one second (hex suffix is not ordered),
+/// so multi-session tests must scan everything instead of guessing "latest".
+fn all_recorded_edits(project: &Path) -> Vec<Value> {
+    let sessions_dir = project.join(".aitrace").join("sessions");
+    let mut events: Vec<Value> = Vec::new();
+    let Ok(entries) = std::fs::read_dir(&sessions_dir) else {
+        return events;
+    };
+    for entry in entries.filter_map(|e| e.ok()) {
+        let log = std::fs::read_to_string(entry.path().join("edits.jsonl")).unwrap_or_default();
+        let mut positions: std::collections::HashMap<u64, usize> = std::collections::HashMap::new();
+        let mut session_events: Vec<Value> = Vec::new();
+        for line in log.lines().filter(|l| !l.trim().is_empty()) {
+            if let Ok(ev) = serde_json::from_str::<Value>(line) {
+                let id = ev["id"].as_u64().unwrap_or(0);
+                match positions.get(&id) {
+                    Some(&pos) => session_events[pos] = ev,
+                    None => {
+                        positions.insert(id, session_events.len());
+                        session_events.push(ev);
+                    }
+                }
+            }
+        }
+        events.extend(session_events);
+    }
+    events
 }
 
 fn find_edit_opt<'a>(edits: &'a [Value], file_part: &str) -> Option<&'a Value> {
@@ -441,6 +471,98 @@ fn subscribe_edits_streams_recorded_edits() {
             .contains("sub.rs"),
         "notification event file; got: {notification}"
     );
+
+    stop_daemon(project);
+}
+
+/// Baseline inheritance must walk past edit-less sessions: a daemon that
+/// crashes (or is restarted) without recording anything sits between two
+/// good sessions, and stopping the walk there would reset every known file
+/// to `create`.
+#[test]
+fn baseline_survives_editless_sessions() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path();
+    std::fs::create_dir_all(project.join("src")).unwrap();
+    let src = project.join("src").join("lib.rs");
+
+    // Session A: record one edit on lib.rs.
+    {
+        let _daemon = spawn_daemon(project);
+        wait_for(
+            &project.join(".aitrace").join("daemon.pid"),
+            Duration::from_secs(5),
+        );
+        std::fs::write(&src, "fn one() {}\n").unwrap();
+        std::thread::sleep(Duration::from_millis(100));
+        send_hook(
+            project,
+            &serde_json::json!({
+                "session_id": "base-a",
+                "tool_name": "Edit",
+                "tool_input": { "file_path": src.to_string_lossy() },
+            }),
+        );
+        wait_for_edit(project, Duration::from_secs(5));
+        stop_daemon(project);
+    }
+
+    // Session B: starts and stops without recording anything (crash-like).
+    {
+        let _daemon = spawn_daemon(project);
+        wait_for(
+            &project.join(".aitrace").join("daemon.pid"),
+            Duration::from_secs(5),
+        );
+        std::thread::sleep(Duration::from_millis(200));
+        stop_daemon(project);
+    }
+
+    // Session C: same file changes again -- the edit must be `modify`
+    // because the baseline skipped the edit-less session B.
+    {
+        let _daemon = spawn_daemon(project);
+        wait_for(
+            &project.join(".aitrace").join("daemon.pid"),
+            Duration::from_secs(5),
+        );
+        std::fs::write(&src, "fn two() {}\n").unwrap();
+        std::thread::sleep(Duration::from_millis(100));
+        send_hook(
+            project,
+            &serde_json::json!({
+                "session_id": "base-c",
+                "tool_name": "Edit",
+                "tool_input": { "file_path": src.to_string_lossy() },
+            }),
+        );
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            // Session dirs collide non-monotonically within one second, so
+            // scan every session instead of guessing which one is newest.
+            let all = all_recorded_edits(project);
+            let hit = all.iter().find(|e| {
+                e["file"]
+                    .as_str()
+                    .unwrap_or("")
+                    .replace('\\', "/")
+                    .contains("lib.rs")
+                    && e["kind"] == "modify"
+                    && e["patch"].as_str().unwrap_or("").contains("fn two()")
+            });
+            if let Some(edit) = hit {
+                assert_eq!(
+                    edit["kind"], "modify",
+                    "baseline must skip edit-less sessions; edit: {edit}"
+                );
+                break;
+            }
+            if Instant::now() > deadline {
+                panic!("session C never recorded lib.rs as modify; all edits: {all:?}");
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    }
 
     stop_daemon(project);
 }

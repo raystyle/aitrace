@@ -106,6 +106,24 @@ impl SessionManager {
         let meta: SessionMeta = serde_json::from_str(&content)?;
         Ok(meta)
     }
+
+    /// Newest session **before** `exclude_id` that actually recorded edits.
+    ///
+    /// Baseline inheritance walks backwards: the immediately preceding
+    /// session may have crashed or recorded nothing (no `edits.jsonl`), and
+    /// stopping there would reset every file to `create` on the next
+    /// restart. Sessions without an edit log are skipped.
+    pub fn latest_prior_session_with_edits(&self, exclude_id: &str) -> Option<PathBuf> {
+        let mut dirs: Vec<PathBuf> = fs::read_dir(&self.sessions_dir)
+            .ok()?
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.is_dir() && p.file_name().and_then(|n| n.to_str()) != Some(exclude_id))
+            .collect();
+        dirs.sort();
+        dirs.reverse();
+        dirs.into_iter().find(|p| p.join("edits.jsonl").is_file())
+    }
 }
 
 // ─── unit tests ──────────────────────────────────────────────────────────────
@@ -119,5 +137,43 @@ mod tests {
         let v1_json = r#"{"id":"test-123","project_path":"/tmp","started_at":0,"mode":"passive"}"#;
         let meta: SessionMeta = serde_json::from_str(v1_json).unwrap();
         assert!(meta.agents.is_empty());
+    }
+
+    #[test]
+    fn test_latest_prior_session_with_edits_skips_editless_sessions() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mgr = SessionManager::new(tmp.path().to_path_buf());
+
+        // Three sessions: s1 recorded edits, s2 crashed before recording,
+        // s3 is the current one being excluded.
+        for (id, with_edits) in [("s1", true), ("s2", false), ("s3", false)] {
+            let dir = tmp.path().join(id);
+            fs::create_dir_all(&dir).unwrap();
+            if with_edits {
+                fs::write(dir.join("edits.jsonl"), "").unwrap();
+            }
+        }
+
+        let found = mgr
+            .latest_prior_session_with_edits("s3")
+            .expect("should skip s2 and find s1");
+        assert_eq!(found.file_name().unwrap(), "s1");
+
+        // An exclusion that matches no directory leaves s1 as the winner.
+        let found = mgr
+            .latest_prior_session_with_edits("nonexistent")
+            .expect("all sessions are candidates");
+        assert_eq!(found.file_name().unwrap(), "s1");
+    }
+
+    #[test]
+    fn test_latest_prior_session_with_edits_none_when_no_logs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mgr = SessionManager::new(tmp.path().to_path_buf());
+        fs::create_dir_all(tmp.path().join("empty-session")).unwrap();
+        assert!(
+            mgr.latest_prior_session_with_edits("empty-session")
+                .is_none()
+        );
     }
 }

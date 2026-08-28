@@ -96,24 +96,12 @@ pub fn run_daemon(project_path: PathBuf, config: Config) -> Result<()> {
     pid::write_pid_file(&pid_file, my_pid, &session.id)?;
     tracing::info!("daemon session {} starting (pid {my_pid})", session.id);
 
-    // 3. Create the recorder, inheriting the baseline from the previous
-    //    session so already-known files are `modify` (not `create`) after a
-    //    daemon restart and their prior content stays diffable.
-    let prev_session_dir = {
-        let mut dirs: Vec<std::path::PathBuf> = std::fs::read_dir(&sessions_dir)
-            .map(|rd| {
-                rd.filter_map(|e| e.ok())
-                    .map(|e| e.path())
-                    .filter(|p| {
-                        p.is_dir()
-                            && p.file_name().and_then(|n| n.to_str()) != Some(session.id.as_str())
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-        dirs.sort();
-        dirs.pop()
-    };
+    // 3. Create the recorder, inheriting the baseline from the most recent
+    //    session that actually recorded edits (immediately preceding
+    //    sessions may have crashed or recorded nothing). Known files then
+    //    record as `modify` (not `create`) after a daemon restart and their
+    //    prior content stays diffable.
+    let prev_session_dir = session_mgr.latest_prior_session_with_edits(&session.id);
     let recorder = Recorder::with_baseline(
         project_path.clone(),
         session.dir.clone(),
