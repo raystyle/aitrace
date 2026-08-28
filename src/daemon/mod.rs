@@ -49,6 +49,15 @@ fn init_logging(vt_dir: &std::path::Path) -> Result<()> {
     Ok(())
 }
 
+/// First `n` **characters** of `s` for log lines.
+///
+/// Byte slicing panics when the cut lands inside a multi-byte character --
+/// which for this project's Chinese intents is the common case, and a panic
+/// inside a log macro kills the daemon.
+fn head(s: &str, n: usize) -> String {
+    s.chars().take(n).collect()
+}
+
 fn sock_path(project_path: &std::path::Path) -> PathBuf {
     project_path.join(".aitrace").join("daemon.sock")
 }
@@ -213,9 +222,7 @@ pub fn run_daemon(project_path: PathBuf, config: Config) -> Result<()> {
                                     "backfill: edit #{} {} intent={:?}",
                                     ev.id,
                                     ev.file,
-                                    ev.operation_intent
-                                        .as_deref()
-                                        .map(|s| &s[..s.len().min(60)])
+                                    ev.operation_intent.as_deref().map(|s| head(s, 60))
                                 );
                             }
                         }
@@ -344,7 +351,7 @@ pub fn run_daemon(project_path: PathBuf, config: Config) -> Result<()> {
                             .event
                             .operation_intent
                             .as_deref()
-                            .map(|s| &s[..s.len().min(60)]),
+                            .map(|s| head(s, 60)),
                         if result.event.operation_id.is_some()
                             && result.event.operation_intent.is_none()
                         {
@@ -492,11 +499,8 @@ fn handle_socket_message(
                 payload.agent_id,
                 payload.operation_id,
                 file,
-                payload.intent.as_deref().map(|s| &s[..s.len().min(60)]),
-                payload
-                    .user_intent
-                    .as_deref()
-                    .map(|s| &s[..s.len().min(40)])
+                payload.intent.as_deref().map(|s| head(s, 60)),
+                payload.user_intent.as_deref().map(|s| head(s, 40))
             );
             // Push enrichment for correlation. Hooks report absolute
             // paths while watcher events are project-relative, so both
@@ -736,4 +740,19 @@ pub fn daemon_status(project_path: &std::path::Path) -> Result<String> {
         r#"{{"type":"status","pid":{},"session_id":"{}"}}"#,
         daemon_pid, session_id
     ))
+}
+
+#[cfg(test)]
+mod log_tests {
+    use super::head;
+
+    #[test]
+    fn head_cuts_on_character_boundaries() {
+        // Regression: byte slicing at 60 landed mid-character in Chinese
+        // intents and crashed the daemon inside its own log macro.
+        let chinese = "提交".repeat(50);
+        assert_eq!(head(&chinese, 60).chars().count(), 60);
+        assert_eq!(head("plain ascii", 5), "plain");
+        assert_eq!(head("short", 100), "short");
+    }
 }

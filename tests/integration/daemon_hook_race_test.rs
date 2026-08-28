@@ -139,9 +139,10 @@ fn wait_for_edit_where(
     loop {
         let edits = recorded_edits(project);
         if let Some(e) = find_edit_opt(&edits, file_part)
-            && check(e) {
-                return edits;
-            }
+            && check(e)
+        {
+            return edits;
+        }
         if Instant::now() > deadline {
             panic!("edit for {file_part} did not satisfy the condition in time; log: {edits:?}");
         }

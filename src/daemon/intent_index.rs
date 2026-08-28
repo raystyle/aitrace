@@ -149,7 +149,9 @@ impl IntentIndex {
             "transcript refresh: {} entries, {} tool ids, prompt={:?}",
             self.entries.len(),
             self.tool_use_entries.len(),
-            self.user_prompt.as_deref().map(|s| &s[..s.len().min(40)])
+            self.user_prompt
+                .as_ref()
+                .map(|s| { s.chars().take(40).collect::<String>() })
         );
     }
 
