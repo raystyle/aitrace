@@ -21,8 +21,11 @@ pub fn bin_path(project: &Path) -> PathBuf {
 /// Copy the running executable into `<project>/.aitrace/bin/aitrace.exe`.
 ///
 /// Logs, the daemon socket, and this binary all stay under the project
-/// directory. If the destination is already running (Windows file lock),
-/// keep the existing file.
+/// directory. If the destination file is locked because a process is still
+/// running from it (on Windows: a live MCP server or hook-send), rename it
+/// out of the way first -- Windows forbids overwriting a running executable
+/// but allows renaming it, and the old process keeps its handle. Only if the
+/// rename also fails do we keep the existing file.
 pub fn install_project_bin(project: &Path) -> Result<PathBuf> {
     let dest = bin_path(project);
     let dir = bin_dir(project);
@@ -34,7 +37,19 @@ pub fn install_project_bin(project: &Path) -> Result<PathBuf> {
     }
 
     if dest.exists() && std::fs::copy(&src, &dest).is_err() {
-        return Ok(dest);
+        // Locked destination: move the running exe aside so the copy can
+        // land at the canonical path. A stale `.old` from a previous update
+        // is replaced.
+        let aside = dest.with_extension("exe.old");
+        let _ = std::fs::remove_file(&aside);
+        if std::fs::rename(&dest, &aside).is_err() || std::fs::copy(&src, &dest).is_err() {
+            // Rename failed too (e.g. aside is locked as well): restore the
+            // original name if we moved it, and keep the old binary.
+            if !dest.exists() && aside.exists() {
+                let _ = std::fs::rename(&aside, &dest);
+            }
+            return Ok(dest);
+        }
     }
     if !dest.exists() {
         std::fs::copy(&src, &dest).with_context(|| format!("copy {:?} -> {:?}", src, dest))?;

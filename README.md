@@ -312,7 +312,7 @@ preset = "tokyo-night"
 [watch]
 debounce_ms = 100
 auto_checkpoint_every = 25
-ignore = [".git", "node_modules", "target", "__pycache__", ".aitrace"]
+ignore = [".git", "node_modules", "target", "__pycache__", ".aitrace", "*.tmp.*"]
 
 # Watchdog: alert when registered constants change
 [[watchdog.constants]]
