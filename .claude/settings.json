@@ -32,6 +32,30 @@
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"${CLAUDE_PROJECT_DIR}/.claude/hooks/session-start.ps1\"",
+            "description": "aitrace phase-0: pick the top-priority TODO",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"${CLAUDE_PROJECT_DIR}/.claude/hooks/stop-reminder.ps1\"",
+            "description": "aitrace phase-7 reminder (guarded by .last-stage7 marker)",
+            "timeout": 10
+          }
+        ]
+      }
     ]
   }
 }

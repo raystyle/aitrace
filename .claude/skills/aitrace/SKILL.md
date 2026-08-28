@@ -87,6 +87,7 @@ allowed-tools: Read Grep Glob Bash(cargo test *) Bash(cargo build *) mcp__aitrac
 5. **待办守恒检查（自洽公理）**：本轮 产 ≥1（新待办或新发现）且 消 ≥1（推进/关闭一项旧待办），每项新待办必带 DoD——只有产出没有消费 = 积压违规；为凑数写无 DoD 的垃圾待办 = Goodhart 违规；两者都使本轮无效。若确实无新发现，把"为什么没找到"本身写成待办（反思自省盲区）
 6. 教训若指向流程或工具缺陷，**同步修订本 SKILL 或 CLAUDE.md**——完成"记录 → 改进"闭环，而不是只记不用；规则修订本身受自洽公理约束（绑检查、带终止、不重复）
 7. 新会话开工按阶段 0 取件，继承上下文与待办
+8. 收尾最后一步刷新 marker（Stop 提醒的终止 guard）：`New-Item -ItemType File -Force .aitrace/.last-stage7 | Out-Null`——必须在记忆文件最后一次编辑**之后**执行
 
 ## 提示
 
