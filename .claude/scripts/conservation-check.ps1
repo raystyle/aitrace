@@ -30,7 +30,15 @@ if (-not (Test-Path $MemoryPath)) {
 }
 
 # Round delta = uncommitted changes to the memory file (run before commit).
-$diff = git diff HEAD -- $MemoryPath 2>$null
+# Git emits UTF-8; Windows PowerShell's default console encoding would
+# otherwise smash checkbox lines so [x]/[ ] never match.
+$prevEnc = [Console]::OutputEncoding
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+try {
+    $diff = git --no-pager -c core.quotepath=false -c i18n.logOutputEncoding=utf-8 diff HEAD -- $MemoryPath 2>$null
+} finally {
+    [Console]::OutputEncoding = $prevEnc
+}
 if (-not $diff) {
     # Untracked file (first round of the day): the whole file is the delta.
     if (git ls-files --error-unmatch $MemoryPath 2>$null) {
