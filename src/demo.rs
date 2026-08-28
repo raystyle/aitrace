@@ -908,7 +908,7 @@ fn populate_synthetic_content(app: &mut App) {
     // For each file, generate content versions and map hashes.
     for (file, hashes) in &file_hashes {
         let versions = generate_file_versions(file, hashes.len());
-        for (hash, content) in hashes.iter().zip(versions.into_iter()) {
+        for (hash, content) in hashes.iter().zip(versions) {
             app.synthetic_content.insert(hash.clone(), content);
         }
     }

@@ -90,12 +90,9 @@ impl Widget for FileView<'_> {
         let scroll_pct = if total_lines <= body_height {
             100
         } else {
+            // total_lines > body_height, so max_scroll >= 1 and never divides by zero
             let max_scroll = total_lines.saturating_sub(body_height);
-            if max_scroll == 0 {
-                100
-            } else {
-                (scroll.min(max_scroll) * 100) / max_scroll
-            }
+            (scroll.min(max_scroll) * 100) / max_scroll
         };
 
         // -- Header --
@@ -299,12 +296,10 @@ impl Widget for FileView<'_> {
             let scrollbar_height = body_height;
             let thumb_size = ((body_height as f64 / total_lines as f64) * scrollbar_height as f64)
                 .max(1.0) as usize;
+            // total_lines > body_height, so max_scroll >= 1 and never divides by zero
             let max_scroll = total_lines.saturating_sub(body_height);
-            let thumb_pos = if max_scroll == 0 {
-                0
-            } else {
-                (scroll.min(max_scroll) * scrollbar_height.saturating_sub(thumb_size)) / max_scroll
-            };
+            let thumb_pos =
+                (scroll.min(max_scroll) * scrollbar_height.saturating_sub(thumb_size)) / max_scroll;
 
             for i in 0..scrollbar_height {
                 let y = area.y + header_rows + i as u16;

@@ -92,7 +92,7 @@ mod tests {
         fn new() -> Self {
             Self(Arc::new(Mutex::new(Vec::new())))
         }
-        fn to_string(&self) -> String {
+        fn contents(&self) -> String {
             let bytes = self.0.lock().unwrap();
             String::from_utf8(bytes.clone()).unwrap()
         }
@@ -186,7 +186,7 @@ mod tests {
         let response = JsonRpcResponse::success(json!(1), json!({"status": "ok"}));
         writer.write_message(&response).unwrap();
 
-        let output = buf.to_string();
+        let output = buf.contents();
         // Output should be a single JSON line followed by newline
         let parsed: serde_json::Value = serde_json::from_str(output.trim()).unwrap();
         assert_eq!(parsed["jsonrpc"], "2.0");
@@ -207,7 +207,7 @@ mod tests {
         };
         writer.write_notification(&notif).unwrap();
 
-        let output = buf.to_string();
+        let output = buf.contents();
         let parsed: serde_json::Value = serde_json::from_str(output.trim()).unwrap();
         assert_eq!(parsed["jsonrpc"], "2.0");
         assert_eq!(parsed["method"], "notifications/initialized");

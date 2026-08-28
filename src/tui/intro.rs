@@ -123,7 +123,7 @@ pub fn play_intro(
     thread::sleep(Duration::from_millis(250));
 
     // Frame 5: System initialization
-    let init_lines = vec![
+    let init_lines = [
         ("daemon", "ok"),
         ("snapshot store", "ok"),
         ("analysis engines", "ok"),
@@ -147,8 +147,7 @@ pub fn play_intro(
             ];
 
             // Render all previous init lines plus current
-            for j in 0..=i {
-                let (l, s) = init_lines[j];
+            for (l, s) in init_lines.iter().take(i + 1) {
                 let dots_len = 30_usize.saturating_sub(l.len() + s.len() + 6);
                 let dots = ".".repeat(dots_len);
                 // We'll render this as a plain string but the color is determined separately

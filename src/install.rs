@@ -37,8 +37,7 @@ pub fn install_project_bin(project: &Path) -> Result<PathBuf> {
         return Ok(dest);
     }
     if !dest.exists() {
-        std::fs::copy(&src, &dest)
-            .with_context(|| format!("copy {:?} -> {:?}", src, dest))?;
+        std::fs::copy(&src, &dest).with_context(|| format!("copy {:?} -> {:?}", src, dest))?;
     }
 
     #[cfg(unix)]
@@ -48,8 +47,7 @@ pub fn install_project_bin(project: &Path) -> Result<PathBuf> {
             .with_context(|| format!("stat {:?}", dest))?
             .permissions();
         perms.set_mode(0o755);
-        std::fs::set_permissions(&dest, perms)
-            .with_context(|| format!("chmod {:?}", dest))?;
+        std::fs::set_permissions(&dest, perms).with_context(|| format!("chmod {:?}", dest))?;
     }
 
     Ok(dest)

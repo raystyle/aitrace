@@ -153,8 +153,8 @@ impl CommandPalette {
                 }
             }
 
-            for idx in 0..self.entries.len() {
-                if !seen[idx] {
+            for (idx, s) in seen.iter().enumerate() {
+                if !*s {
                     result.push(idx);
                 }
             }
@@ -347,11 +347,7 @@ impl Widget for CommandPaletteWidget<'_> {
                     } else {
                         self.theme_bg
                     };
-                    let fg = if *selected {
-                        self.theme_fg
-                    } else {
-                        self.theme_fg
-                    };
+                    let fg = self.theme_fg;
 
                     let shortcut_text = entry.shortcut.as_deref().unwrap_or("");
                     let label_max = (inner.width as usize)
@@ -426,9 +422,7 @@ impl<'a> CommandPaletteWidget<'a> {
         let max_rows = MAX_VISIBLE + count_headers_in_window(&full_rows, MAX_VISIBLE);
         let total = full_rows.len();
 
-        let start = if total <= max_rows {
-            0
-        } else if selected_row < max_rows / 2 {
+        let start = if total <= max_rows || selected_row < max_rows / 2 {
             0
         } else if selected_row + max_rows / 2 >= total {
             total.saturating_sub(max_rows)

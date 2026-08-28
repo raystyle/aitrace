@@ -457,7 +457,7 @@ impl App {
             *file_counts.entry(edit.file.clone()).or_insert(0) += 1;
         }
         let mut file_heat: Vec<(String, u32)> = file_counts.into_iter().collect();
-        file_heat.sort_by(|a, b| b.1.cmp(&a.1));
+        file_heat.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
         self.dashboard_state.file_heat = file_heat;
 
         // Agent status
@@ -477,7 +477,7 @@ impl App {
                 (label, count, active)
             })
             .collect();
-        agents.sort_by(|a, b| b.1.cmp(&a.1));
+        agents.sort_by_key(|(_, count, _)| std::cmp::Reverse(*count));
         self.dashboard_state.agent_status = agents;
 
         // Operations

@@ -328,9 +328,7 @@ pub fn start_daemon(project_path: &std::path::Path) -> Result<(i32, String)> {
                 const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
                 const DETACHED_PROCESS: u32 = 0x0000_0008;
                 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-                cmd.creation_flags(
-                    CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS | CREATE_NO_WINDOW,
-                );
+                cmd.creation_flags(CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS | CREATE_NO_WINDOW);
             }
             cmd.spawn().context("spawn daemon child process")?
         }

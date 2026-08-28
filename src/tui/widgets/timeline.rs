@@ -246,7 +246,7 @@ impl Widget for TimelineWidget<'_> {
             buf.set_string(
                 area.x,
                 row,
-                &" ".repeat(name_and_sep.min(area.width as usize)),
+                " ".repeat(name_and_sep.min(area.width as usize)),
                 Style::default(),
             );
 
@@ -304,7 +304,7 @@ impl Widget for TimelineWidget<'_> {
             buf.set_string(
                 area.x,
                 row,
-                &" ".repeat(name_and_sep.min(area.width as usize)),
+                " ".repeat(name_and_sep.min(area.width as usize)),
                 Style::default(),
             );
 

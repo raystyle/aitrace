@@ -40,22 +40,21 @@ impl BookmarkManager {
     /// Get all bookmarks sorted by edit_index (descending, newest first).
     pub fn sorted(&self) -> Vec<&Bookmark> {
         let mut refs: Vec<&Bookmark> = self.bookmarks.iter().collect();
-        refs.sort_by(|a, b| b.edit_index.cmp(&a.edit_index));
+        refs.sort_by_key(|b| std::cmp::Reverse(b.edit_index));
         refs
     }
 
     /// Save bookmarks to a JSON file.
     pub fn save(&self, path: &std::path::Path) -> std::io::Result<()> {
-        let json = serde_json::to_string_pretty(&self.bookmarks)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        let json = serde_json::to_string_pretty(&self.bookmarks).map_err(std::io::Error::other)?;
         std::fs::write(path, json)
     }
 
     /// Load bookmarks from a JSON file.
     pub fn load(path: &std::path::Path) -> std::io::Result<Self> {
         let data = std::fs::read_to_string(path)?;
-        let bookmarks: Vec<Bookmark> = serde_json::from_str(&data)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        let bookmarks: Vec<Bookmark> =
+            serde_json::from_str(&data).map_err(std::io::Error::other)?;
         Ok(Self { bookmarks })
     }
 

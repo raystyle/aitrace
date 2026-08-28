@@ -282,7 +282,7 @@ fn write_session_summary(session: &crate::session::Session, app: &App) -> Result
     summary.push_str("|------|-------|-------------|---------------|\n");
 
     let mut files: Vec<_> = file_stats.iter().collect();
-    files.sort_by(|a, b| b.1.0.cmp(&a.1.0));
+    files.sort_by_key(|f| std::cmp::Reverse(f.1.0));
 
     for (file, (edits, added, removed)) in &files {
         summary.push_str(&format!(

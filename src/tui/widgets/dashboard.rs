@@ -90,8 +90,6 @@ pub fn format_count(n: u64) -> String {
         let m = n as f64 / 1_000_000.0;
         if m >= 100.0 {
             format!("{:.0}M", m)
-        } else if m >= 10.0 {
-            format!("{:.1}M", m)
         } else {
             format!("{:.1}M", m)
         }
@@ -99,8 +97,6 @@ pub fn format_count(n: u64) -> String {
         let k = n as f64 / 1_000.0;
         if k >= 100.0 {
             format!("{:.0}k", k)
-        } else if k >= 10.0 {
-            format!("{:.1}k", k)
         } else {
             format!("{:.1}k", k)
         }

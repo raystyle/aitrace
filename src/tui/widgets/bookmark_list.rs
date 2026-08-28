@@ -126,9 +126,7 @@ impl Widget for BookmarkListWidget<'_> {
         // ── compute scroll window ─────────────────────────────────
         let total = self.bookmarks.len();
         let visible = total.min(MAX_VISIBLE);
-        let start = if total <= visible {
-            0
-        } else if self.selected < visible / 2 {
+        let start = if total <= visible || self.selected < visible / 2 {
             0
         } else if self.selected + visible / 2 >= total {
             total.saturating_sub(visible)

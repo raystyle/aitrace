@@ -126,7 +126,7 @@ impl SessionDiff {
             }
         }
         let mut result: Vec<(String, usize)> = counts.into_iter().collect();
-        result.sort_by(|a, b| b.1.cmp(&a.1));
+        result.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
         result
     }
 }

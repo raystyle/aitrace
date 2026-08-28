@@ -103,9 +103,7 @@ fn parse_timestamp(val: &Value) -> i64 {
 
 /// Extract the record-level timestamp from a JSONL line value.
 fn record_ts(val: &Value) -> i64 {
-    val.get("timestamp")
-        .map(|t| parse_timestamp(t))
-        .unwrap_or(0)
+    val.get("timestamp").map(parse_timestamp).unwrap_or(0)
 }
 
 /// Extract plain text from an assistant message's content blocks.
@@ -884,7 +882,7 @@ mod tests {
 
     #[test]
     fn test_parse_simple_turn() {
-        let lines = vec![
+        let lines = [
             make_human("fix the auth middleware", "2026-03-28T14:32:01Z"),
             make_assistant(
                 "I'll fix the auth middleware.",
@@ -916,7 +914,7 @@ mod tests {
 
     #[test]
     fn test_parse_multiple_turns() {
-        let lines = vec![
+        let lines = [
             make_human("first question", "2026-03-28T14:00:00Z"),
             make_assistant("first answer", &[], "2026-03-28T14:00:02Z"),
             make_human("second question", "2026-03-28T14:01:00Z"),
@@ -932,7 +930,7 @@ mod tests {
 
     #[test]
     fn test_parse_skips_malformed_lines() {
-        let lines = vec![
+        let lines = [
             make_human("hello", "2026-03-28T14:00:00Z"),
             "this is not json".to_string(),
             "{\"incomplete\": true".to_string(),
@@ -1058,7 +1056,7 @@ mod tests {
     #[test]
     fn test_orphaned_assistant_creates_turn() {
         // An assistant record without a preceding human record
-        let lines = vec![make_assistant(
+        let lines = [make_assistant(
             "orphaned response",
             &[],
             "2026-03-28T14:00:00Z",
@@ -1073,7 +1071,7 @@ mod tests {
 
     #[test]
     fn test_multiple_tool_calls_in_one_turn() {
-        let lines = vec![
+        let lines = [
             make_human("refactor auth", "2026-03-28T14:00:00Z"),
             make_assistant(
                 "I'll read both files.",

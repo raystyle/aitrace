@@ -75,7 +75,11 @@ fn ensure_post_tool_use_array(settings: &mut Value) {
         _ => None,
     };
 
-    if !settings.get("hooks").map(|v| v.is_object()).unwrap_or(false) {
+    if !settings
+        .get("hooks")
+        .map(|v| v.is_object())
+        .unwrap_or(false)
+    {
         settings["hooks"] = json!({});
     }
 
@@ -83,8 +87,7 @@ fn ensure_post_tool_use_array(settings: &mut Value) {
         let dest = settings["hooks"]
             .as_object_mut()
             .expect("hooks object just set");
-        dest.entry(POST_TOOL_USE)
-            .or_insert_with(|| json!([]));
+        dest.entry(POST_TOOL_USE).or_insert_with(|| json!([]));
         if let Some(Value::Array(existing)) = dest.get_mut(POST_TOOL_USE) {
             existing.extend(groups);
         }
@@ -213,7 +216,11 @@ mod tests {
         assert_eq!(hook["args"][1], "--project");
         assert_eq!(hook["args"][2], project_path.to_string_lossy().as_ref());
         let command = hook["command"].as_str().unwrap();
-        assert!(command.replace('\\', "/").ends_with(".aitrace/bin/aitrace.exe"));
+        assert!(
+            command
+                .replace('\\', "/")
+                .ends_with(".aitrace/bin/aitrace.exe")
+        );
     }
 
     #[test]
@@ -284,6 +291,9 @@ mod tests {
         let raw = std::fs::read_to_string(claude_dir.join("settings.local.json")).unwrap();
         let settings: Value = serde_json::from_str(&raw).unwrap();
         assert!(settings["hooks"].is_object());
-        assert_eq!(settings["hooks"]["PostToolUse"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            settings["hooks"]["PostToolUse"].as_array().unwrap().len(),
+            2
+        );
     }
 }

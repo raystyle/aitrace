@@ -571,8 +571,8 @@ fn attach_parent_console() {
     use std::os::windows::io::AsRawHandle;
     use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
     use windows_sys::Win32::System::Console::{
-        AttachConsole, GetStdHandle, SetStdHandle, STD_ERROR_HANDLE, STD_INPUT_HANDLE,
-        STD_OUTPUT_HANDLE,
+        AttachConsole, GetStdHandle, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
+        SetStdHandle,
     };
 
     unsafe {
