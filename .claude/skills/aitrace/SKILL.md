@@ -13,6 +13,14 @@ Use this skill when tests fail or behavior regresses after a series of AI-assist
 
 Project MCP is already in `.mcp.json` as server `aitrace` (`aitrace mcp`). Do not add a user-scoped MCP server. The daemon must be recording (`aitrace daemon status`).
 
+## Verify the binaries under test
+
+Every acceptance or regression run must state which build it tested (git short hash or crate version), and confirm the running processes are that build:
+
+1. Stop the daemon before `cargo build`/`cargo test` — the daemon child runs from `target\debug\aitrace.exe` and locks the linker's output.
+2. `target\debug\aitrace.exe daemon start` installs the fresh exe into `.aitrace/bin/` (a locked destination is renamed to `aitrace.exe.old`, so a live MCP server does not block the update).
+3. The **MCP server process is NOT auto-upgraded** — it keeps running the old binary until reconnected. `initialize` reports `serverInfo.version` (crate version), so check `/mcp`: if the version shown is stale, remind the human to reconnect the MCP server (or restart Claude Code) before accepting MCP-side changes.
+
 ## Workflow
 
 ### Phase 1: Load Context
