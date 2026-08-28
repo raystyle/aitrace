@@ -91,6 +91,8 @@ aitrace mcp   # 启动 stdio JSON-RPC 服务器
 
 ## Cockpit 功能
 
+> **TUI 需要独占终端**：不要在多路复用面板（rmux/tmux 类）或嵌套 shell 里运行——面板驱动共写屏幕并拦截键盘，会出现"回显串进 TUI、按键无响应"的假故障。用独立的 Windows Terminal / cmd 窗口运行。
+
 ### 驾驶舱仪表盘（`D` 切换）
 
 htop 风格总览：
