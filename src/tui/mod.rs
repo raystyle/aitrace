@@ -152,6 +152,9 @@ pub fn run_tui_with_options(
 
     // ── terminal setup ────────────────────────────────────────────────────────
     enable_raw_mode()?;
+    // QuickEdit must go: a mouse click in the window would otherwise freeze
+    // all keyboard input (text-selection mode) and right-click would paste.
+    input_test::harden_console_input();
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
     execute!(stdout, crossterm::event::EnableMouseCapture)?;

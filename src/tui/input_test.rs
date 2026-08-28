@@ -71,6 +71,32 @@ fn console_input_mode() -> (u32, bool) {
     (0, false)
 }
 
+/// Clear the console input bits that break interactive TUIs even under
+/// raw mode: QuickEdit (a mouse click freezes all keyboard input into
+/// text-selection mode; right-click pastes the clipboard), INSERT, and
+/// legacy MOUSE input (we use VT mouse). EXTENDED must stay set for the
+/// QuickEdit/INSERT bits to take effect.
+#[cfg(windows)]
+pub fn harden_console_input() {
+    use windows_sys::Win32::System::Console::{
+        ENABLE_EXTENDED_FLAGS, ENABLE_INSERT_MODE, ENABLE_MOUSE_INPUT, ENABLE_QUICK_EDIT_MODE,
+        GetConsoleMode, GetStdHandle, STD_INPUT_HANDLE, SetConsoleMode,
+    };
+    unsafe {
+        let handle = GetStdHandle(STD_INPUT_HANDLE);
+        let mut mode: u32 = 0;
+        if GetConsoleMode(handle, &mut mode) == 0 {
+            return;
+        }
+        let cleared = mode & !(ENABLE_QUICK_EDIT_MODE | ENABLE_INSERT_MODE | ENABLE_MOUSE_INPUT)
+            | ENABLE_EXTENDED_FLAGS;
+        SetConsoleMode(handle, cleared);
+    }
+}
+
+#[cfg(not(windows))]
+pub fn harden_console_input() {}
+
 #[cfg(not(windows))]
 fn input_mode_bits(_mode: u32) -> Vec<&'static str> {
     Vec::new()
@@ -88,6 +114,7 @@ pub fn run() -> Result<()> {
     )?;
 
     enable_raw_mode()?;
+    harden_console_input();
     let (mode_after, ok_after) = console_input_mode();
     writeln!(
         log,
