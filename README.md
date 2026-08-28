@@ -71,7 +71,7 @@ When Claude Code's `.claude/` directory is detected in other projects, the daemo
 - Token usage per turn with cost estimates (input, output, cache read)
 - Cache hit rate tracking
 - Conversation panel (`C` key) with navigable turns and tool calls
-- Agent label and operation intent attached to every edit
+- Agent label, operation intent, and the triggering user prompt attached to every edit (resolved from the Claude Code transcript via `parentUuid` chain walk)
 
 ### Timeline and Playback
 
