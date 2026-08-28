@@ -92,6 +92,8 @@ aitrace mcp   # 启动 stdio JSON-RPC 服务器
 ## Cockpit 功能
 
 > **TUI 需要独占终端**：不要在多路复用面板（rmux/tmux 类）或嵌套 shell 里运行——面板驱动共写屏幕并拦截键盘，会出现"回显串进 TUI、按键无响应"的假故障。用独立的 Windows Terminal / cmd 窗口运行。
+>
+> **中文输入法请切英文模式**（`Shift` 或 `Win+Space`）：raw mode 下字母键会被 IME 组字窗拦截，控制台收不到——表现为"按键全部无效"。方向键/Enter 不受影响。这不是 aitrace 的 bug，是 Windows 控制台与 IME 的固有限制（Vim 等终端程序同理）。
 
 ### 驾驶舱仪表盘（`D` 切换）
 
