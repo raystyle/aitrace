@@ -6,7 +6,7 @@ use crate::config::Config;
 use crate::event::EditEvent;
 use crate::recorder::Recorder;
 use crate::tui::app::Mode;
-use crate::tui::{App, SidebarPanel, input, layout, widgets};
+use crate::tui::{App, SidebarPanel, input, input_test, layout, widgets};
 use anyhow::Result;
 use crossterm::event::{self as ct_event, Event, KeyEventKind};
 use ratatui::{
@@ -465,6 +465,14 @@ pub fn run_event_loop(
         if ct_event::poll(poll_duration)? {
             match ct_event::read()? {
                 Event::Resize(_cols, _rows) => {
+                    // Growing the window (e.g. 120x14 → 210x28) leaves the old
+                    // prompt in the new cells unless we reset the diff buffer.
+                    let _ = terminal.clear();
+                    continue;
+                }
+                Event::FocusGained => {
+                    input_test::harden_console_input();
+                    input_test::harden_console_output();
                     continue;
                 }
                 Event::Key(key) => {

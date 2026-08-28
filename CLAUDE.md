@@ -64,4 +64,5 @@ aitrace mcp
 - crate / 二进制名 `aitrace`，不得改回 vibetracer。
 - `publish = false`；无 Homebrew、无 crates.io。
 - Windows 10 1809+（AF_UNIX 经 `uds_windows`）；不引入命名管道、TCP、nightly std AF_UNIX。
+- **交互 TUI 必须是 PE 控制台子系统（CUI）**。禁止 `#![windows_subsystem = "windows"]`：pwsh/cmd 不等 GUI 子系统，提示符和键盘留在 shell，表现为「框是 TUI、底下仍有 `pwsh ❯`、`--input-test` 无 Key 事件」。daemon/hook/MCP 闪框用 `CREATE_NO_WINDOW`，不靠改 PE。机检：`tests/subsystem.rs`。
 - CLAUDE.md 保持精简，长流程放 `.claude/skills/`。

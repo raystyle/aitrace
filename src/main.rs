@@ -1,4 +1,8 @@
-#![cfg_attr(windows, windows_subsystem = "windows")]
+// Console subsystem on purpose. `windows_subsystem = "windows"` makes pwsh/cmd
+// return to the prompt immediately, so the shell and the TUI share one console
+// (prompt bleeds through, keys never reach crossterm). Daemon/hook/MCP flashes
+// are prevented at spawn time with CREATE_NO_WINDOW, not by hiding the PE
+// subsystem.
 
 use clap::Parser;
 use std::path::PathBuf;
@@ -616,11 +620,10 @@ fn run_tui_guarded(
     }
 }
 
-/// Windows binaries default to the console subsystem, so hook/MCP/daemon
-/// spawns flash a black console window. This crate is built with
-/// `windows_subsystem = "windows"` instead; attach to the parent terminal
-/// only when this process has no stdout yet (interactive `aitrace` in a
-/// shell). Piped stdio (MCP, hook-send, captured CLI) is left alone.
+/// Attach to the parent terminal only when this process has no stdout yet
+/// (rare for a console-subsystem binary). Piped stdio (MCP, hook-send,
+/// captured CLI) is left alone. Daemon children are spawned with
+/// CREATE_NO_WINDOW so they do not flash a console.
 #[cfg(windows)]
 fn attach_parent_console() {
     use std::fs::OpenOptions;

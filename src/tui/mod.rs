@@ -28,7 +28,7 @@ use anyhow::Result;
 use chrono::Utc;
 use crossterm::{
     execute,
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
+    terminal::{LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{Terminal, backend::CrosstermBackend};
 use std::io;
@@ -156,10 +156,13 @@ pub fn run_tui_with_options(
     // all keyboard input (text-selection mode) and right-click would paste.
     input_test::harden_console_input();
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
+    // VT-OUT + alt-screen + explicit clear: without this, Windows leaves the
+    // shell prompt in cells ratatui's first diff thinks are still blank.
+    input_test::take_over_screen(&mut stdout)?;
     execute!(stdout, crossterm::event::EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
+    terminal.clear()?;
 
     // ── intro animation ──────────────────────────────────────────────────────
     if !is_replay {
