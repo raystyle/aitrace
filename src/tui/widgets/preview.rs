@@ -55,7 +55,7 @@ impl PreviewPane<'_> {
         let edit = match self.app.current_edit() {
             Some(e) => e,
             None => {
-                render_empty_state(area, buf, &self.app.theme);
+                render_unselected_state(area, buf, self.app);
                 return;
             }
         };
@@ -191,7 +191,7 @@ impl Widget for PreviewPane<'_> {
         }
 
         if self.app.current_edit().is_none() {
-            render_empty_state(area, buf, &self.app.theme);
+            render_unselected_state(area, buf, self.app);
             return;
         }
 
@@ -208,8 +208,20 @@ impl Widget for PreviewPane<'_> {
                         self.changed_lines,
                     )
                     .render(area, buf);
+                } else if let Some(edit) = self.app.current_edit() {
+                    // The frame exists but its snapshot could not be loaded
+                    // (missing or unreadable) -- say so instead of pretending
+                    // no edits were ever recorded.
+                    render_centered_state(
+                        area,
+                        buf,
+                        &self.app.theme,
+                        &format!("snapshot unavailable for frame #{}", edit.id),
+                        &edit.file,
+                        "",
+                    );
                 } else {
-                    render_empty_state(area, buf, &self.app.theme);
+                    render_unselected_state(area, buf, self.app);
                 }
             }
             crate::tui::app::PreviewMode::Diff => {
@@ -221,6 +233,28 @@ impl Widget for PreviewPane<'_> {
 
 /// Render the empty/welcome state when no edits have been tracked yet.
 fn render_empty_state(area: Rect, buf: &mut Buffer, theme: &crate::theme::Theme) {
+    render_centered_state(
+        area,
+        buf,
+        theme,
+        "waiting for edits",
+        "start coding in another pane",
+        "aitrace will track every change automatically",
+    );
+}
+
+/// Render a centered informational state: same layout as the welcome
+/// screen, but with a contextual headline (edits exist but none selected,
+/// snapshot unavailable, ...). One message per cause -- never claim
+/// "waiting for edits" when edits exist.
+fn render_centered_state(
+    area: Rect,
+    buf: &mut Buffer,
+    theme: &crate::theme::Theme,
+    headline: &str,
+    sub1: &str,
+    sub2: &str,
+) {
     if area.height < 5 || area.width < 30 {
         return;
     }
@@ -235,10 +269,10 @@ fn render_empty_state(area: Rect, buf: &mut Buffer, theme: &crate::theme::Theme)
 
     let hints = [
         ("", ""),
-        ("waiting for edits", ""),
+        (headline, ""),
         ("", ""),
-        ("start coding in another pane", "aitrace will"),
-        ("track every change automatically", ""),
+        (sub1, ""),
+        (sub2, ""),
         ("", ""),
         ("left/right", "scrub through edits"),
         ("Space", "play / pause replay"),
@@ -283,7 +317,7 @@ fn render_empty_state(area: Rect, buf: &mut Buffer, theme: &crate::theme::Theme)
         if desc.is_empty() {
             // It's a section label
             let x = area.x + area.width.saturating_sub(key.len() as u16) / 2;
-            let color = if key.contains("waiting") {
+            let color = if *key == headline {
                 color_subtle
             } else {
                 color_dim
@@ -302,5 +336,98 @@ fn render_empty_state(area: Rect, buf: &mut Buffer, theme: &crate::theme::Theme)
             );
             buf.set_string(x + 16, y, *desc, Style::default().fg(color_subtle));
         }
+    }
+}
+
+/// Nothing is selected at the playhead: either the session truly has no
+/// edits yet (welcome state) or edits exist and the user just has not
+/// scrubbed to one -- very different situations, different messages.
+fn render_unselected_state(area: Rect, buf: &mut Buffer, app: &App) {
+    if app.edits.is_empty() {
+        render_empty_state(area, buf, &app.theme);
+    } else {
+        render_centered_state(
+            area,
+            buf,
+            &app.theme,
+            &format!("{} edits recorded", app.edits.len()),
+            "press Right to select a frame",
+            "",
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::event::{EditEvent, EditKind};
+    use crate::tui::app::PreviewMode;
+
+    fn sample_edit() -> EditEvent {
+        EditEvent {
+            id: 7,
+            ts: 0,
+            file: "src/ghost.rs".to_string(),
+            kind: EditKind::Modify,
+            patch: String::new(),
+            before_hash: None,
+            after_hash: "h".to_string(),
+            intent: None,
+            tool: None,
+            lines_added: 1,
+            lines_removed: 0,
+            agent_id: None,
+            agent_label: None,
+            operation_id: None,
+            operation_intent: None,
+            tool_name: None,
+            restore_id: None,
+        }
+    }
+
+    fn render_to_string(app: &App, file_content: Option<(&str, &str)>) -> String {
+        let area = Rect::new(0, 0, 100, 30);
+        let mut buf = Buffer::empty(area);
+        let changed = std::collections::HashSet::new();
+        PreviewPane::new(app, file_content, None, &changed).render(area, &mut buf);
+        buf.content.iter().map(|c| c.symbol()).collect()
+    }
+
+    #[test]
+    fn snapshot_failure_is_not_waiting_for_edits() {
+        // Regression: a present frame whose snapshot cannot be loaded used
+        // to render the "waiting for edits" welcome screen.
+        let mut app = App::new();
+        app.push_edit(sample_edit());
+        app.playhead = 0;
+        app.preview_mode = PreviewMode::File;
+
+        let text = render_to_string(&app, None);
+        assert!(
+            text.contains("snapshot unavailable for frame #7"),
+            "got: {text}"
+        );
+        assert!(text.contains("src/ghost.rs"));
+        assert!(!text.contains("waiting for edits"));
+    }
+
+    #[test]
+    fn edits_without_selection_offer_scrub_not_waiting() {
+        let mut app = App::new();
+        app.push_edit(sample_edit());
+        app.playhead = 1; // past the end: nothing selected
+        app.preview_mode = PreviewMode::File;
+
+        let text = render_to_string(&app, None);
+        assert!(text.contains("1 edits recorded"), "got: {text}");
+        assert!(text.contains("press Right"));
+        assert!(!text.contains("waiting for edits"));
+    }
+
+    #[test]
+    fn truly_empty_session_still_shows_welcome() {
+        let app = App::new();
+        let text = render_to_string(&app, None);
+        assert!(text.contains("waiting for edits"));
     }
 }
