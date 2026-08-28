@@ -24,12 +24,12 @@ Project install lives under `.aitrace/` (gitignored): sessions, snapshots, `daem
 | --- | --- | --- |
 | Hook | `.claude/settings.json` | `PostToolUse` on `Write\|Edit` runs `aitrace hook-send` |
 | MCP | `.mcp.json` (repo root, not under `.claude/`) | Server name `aitrace`; tools listed below |
-| Skill | `.claude/skills/aitrace-review/SKILL.md` | `/aitrace-review` after a regression |
+| Skill | `.claude/skills/aitrace/SKILL.md` | `/aitrace` after a regression |
 | Local overrides | `.claude/settings.local.json` | gitignored; do not commit |
 
 On first launch in this folder: accept the workspace trust dialog, then approve the `aitrace` MCP server if it is still pending (`/mcp`).
 
-When tests fail or an edit sequence went wrong, invoke `/aitrace-review` (or follow that skill) instead of guessing. Use MCP tools, not a re-read of the whole tree, to find the bad frame.
+When tests fail or an edit sequence went wrong, invoke `/aitrace` (or follow that skill) instead of guessing. Use MCP tools, not a re-read of the whole tree, to find the bad frame.
 
 ## MCP tools
 

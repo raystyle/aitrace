@@ -60,7 +60,7 @@ This repository ships project-scoped Claude Code config (hooks, MCP, skill). It 
 
 - `.claude/settings.json` — `PostToolUse` hook on `Write|Edit` runs `<project>/.aitrace/bin/aitrace.exe hook-send`
 - `.mcp.json` — stdio MCP server `aitrace` (`<project>/.aitrace/bin/aitrace.exe mcp`)
-- `.claude/skills/aitrace-review/SKILL.md` — `/aitrace-review` self-correction workflow
+- `.claude/skills/aitrace/SKILL.md` — `/aitrace` self-correction workflow
 - `CLAUDE.md` — standing instructions for Claude Code
 
 On first launch, accept the workspace trust dialog and approve the `aitrace` MCP server (`/mcp`). Keep the recorder running with `aitrace daemon start`.
@@ -435,6 +435,19 @@ aitrace
 The daemon records file changes to an append-only JSONL edit journal in `.aitrace/`. Every file version is stored in a content-addressed snapshot store keyed by SHA-256 hash. The TUI tails the edit log in real-time and renders the cockpit. Claude Code's conversation logs are parsed in a background thread. Analysis engines evaluate on each incoming edit and surface alerts. The layout uses a dynamic panel registry with focus cycling.
 
 Data is stored in `.aitrace/` within your project directory. Add it to `.gitignore`.
+
+---
+
+## Design Documents
+
+Design notes and research live in [`docs/`](docs/):
+
+| Document | Contents |
+| --- | --- |
+| [`aitrace-研究.md`](docs/aitrace-研究.md) | Original research: session observability and replay — goals and upstream (`vibetracer`) survey |
+| [`aitrace-windows-支持.md`](docs/aitrace-windows-支持.md) | Windows support design: AF_UNIX via `uds_windows`, hidden daemon |
+| [`claude-code-项目级配置.md`](docs/claude-code-项目级配置.md) | Project-scoped Claude Code integration: hooks, MCP, skills |
+| [`aitrace-review-skill.md`](docs/aitrace-review-skill.md) | Archived first version of the self-correction skill (the live one is `.claude/skills/aitrace/SKILL.md`, invoked as `/aitrace`) |
 
 ---
 

@@ -1,5 +1,5 @@
 ---
-name: aitrace-review
+name: aitrace
 description: >
   Self-correction workflow using aitrace edit history. Use when tests fail,
   behavior regresses after AI-assisted edits, or the user asks to bisect,
@@ -7,7 +7,7 @@ description: >
 allowed-tools: Read Grep Glob Bash(cargo test *) Bash(cargo build *) mcp__aitrace__list_sessions mcp__aitrace__get_timeline mcp__aitrace__get_frame mcp__aitrace__diff_frames mcp__aitrace__search_edits mcp__aitrace__get_regression_window mcp__aitrace__subscribe_edits
 ---
 
-# aitrace Self-Correction Review
+# aitrace Self-Correction
 
 Use this skill when tests fail or behavior regresses after a series of AI-assisted edits. Scrub the aitrace timeline via MCP and fix the regression at its source.
 
