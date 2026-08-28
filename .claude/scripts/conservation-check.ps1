@@ -43,15 +43,22 @@ if (-not $diff) {
 $added = $diff | Where-Object { $_ -match '^\+' -and $_ -notmatch '^\+\+\+' }
 $thisRoundClosed = ($added | Where-Object { $_ -match '^\+\s*-\s*\[x\]' }).Count
 $thisRoundOpen = ($added | Where-Object { $_ -match '^\+\s*-\s*\[ \]' }).Count
+# A TODO produced AND closed within the same round lands as a pure-added
+# [x] line, so the diff's produced count would miss it. Heuristic: closed
+# lines beyond the open lines removed from HEAD are same-round items and
+# count as produced as well.
+$removedOpen = ($diff | Where-Object { $_ -match '^-\s*-\s*\[ \]' -and $_ -notmatch '^---' }).Count
+$sameRound = [Math]::Max(0, $thisRoundClosed - $removedOpen)
+$thisRoundProduced = $thisRoundOpen + $sameRound
 
 # Day totals for context.
 $content = Get-Content $MemoryPath -Raw -Encoding UTF8
 $dayClosed = ([regex]::Matches($content, '(?m)^-\s*\[x\]')).Count
 $dayOpen = ([regex]::Matches($content, '(?m)^-\s*\[ \]')).Count
 
-Write-Output "conservation: this round closed=$thisRoundClosed produced=$thisRoundOpen (day totals: closed=$dayClosed open=$dayOpen)"
+Write-Output "conservation: this round closed=$thisRoundClosed produced=$thisRoundProduced (open-added=$thisRoundOpen same-round-closed=$sameRound; day totals: closed=$dayClosed open=$dayOpen)"
 
-if ($thisRoundClosed -eq 0 -and $thisRoundOpen -eq 0) {
+if ($thisRoundClosed -eq 0 -and $thisRoundProduced -eq 0) {
     Write-Output "conservation: no checkbox changes in the round delta -- if work happened, record it in the memory file first"
     exit 0
 }
@@ -59,7 +66,7 @@ if ($thisRoundClosed -eq 0) {
     [Console]::Error.WriteLine("conservation violation: consumed=0 this round -- close or advance at least one TODO before ending the round")
     exit 2
 }
-if ($thisRoundOpen -eq 0) {
+if ($thisRoundProduced -eq 0) {
     if ($AllowNoProduce) {
         Write-Output "conservation: closing round (produced=0 allowed by axiom 2 amendment)"
         exit 0
