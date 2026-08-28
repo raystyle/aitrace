@@ -150,9 +150,10 @@ fn wait_for_edit_where(
     }
 }
 
-/// Edits across ALL sessions (deduplicated per session). Session dir names
-/// collide non-monotonically within one second (hex suffix is not ordered),
-/// so multi-session tests must scan everything instead of guessing "latest".
+/// Edits across ALL sessions (deduplicated per session). Historical session
+/// dirs use the old unordered hex suffix, so multi-session tests scan
+/// everything instead of guessing "latest by name" (new-format ids are
+/// monotonic, but not every dir in a test project is new-format).
 fn all_recorded_edits(project: &Path) -> Vec<Value> {
     let sessions_dir = project.join(".aitrace").join("sessions");
     let mut events: Vec<Value> = Vec::new();

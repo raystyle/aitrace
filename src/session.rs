@@ -32,14 +32,15 @@ pub struct Session {
 }
 
 impl Session {
-    /// Generate a session ID in the format `YYYYMMDD-HHMMSS-xxxx`
-    /// where `xxxx` is 4 random lowercase hex characters.
+    /// Generate a session ID in the format `YYYYMMDD-HHMMSS-ffffff`
+    /// where `ffffff` is the microsecond-within-second, zero-padded.
+    ///
+    /// The suffix is **monotonic**: session directory names then sort
+    /// lexicographically in true creation order even for sessions created
+    /// within the same second. (The previous `micros & 0xFFFF` hex suffix
+    /// wrapped arbitrarily, making "latest dir by name" unreliable.)
     pub fn generate_id() -> String {
-        let now = Utc::now();
-        let timestamp = now.format("%Y%m%d-%H%M%S").to_string();
-        let micros = now.timestamp_micros();
-        let hex_suffix = format!("{:04x}", (micros & 0xFFFF) as u16);
-        format!("{}-{}", timestamp, hex_suffix)
+        Utc::now().format("%Y%m%d-%H%M%S-%6f").to_string()
     }
 }
 
@@ -137,6 +138,25 @@ mod tests {
         let v1_json = r#"{"id":"test-123","project_path":"/tmp","started_at":0,"mode":"passive"}"#;
         let meta: SessionMeta = serde_json::from_str(v1_json).unwrap();
         assert!(meta.agents.is_empty());
+    }
+
+    #[test]
+    fn test_session_ids_are_lexicographically_monotonic() {
+        // Rapid-fire generation must never go backwards by name: dir-name
+        // order is creation order, even within the same second.
+        let mut prev = String::new();
+        for _ in 0..100 {
+            let id = Session::generate_id();
+            assert!(
+                id > prev,
+                "session id went backwards or repeated: {prev:?} -> {id:?}"
+            );
+            assert!(
+                id.len() == "YYYYMMDD-HHMMSS-ffffff".len(),
+                "unexpected id shape: {id:?}"
+            );
+            prev = id;
+        }
     }
 
     #[test]

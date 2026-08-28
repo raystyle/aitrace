@@ -4,7 +4,8 @@ use tempfile::tempdir;
 #[test]
 fn test_session_id_format() {
     let id = Session::generate_id();
-    // Expected format: YYYYMMDD-HHMMSS-xxxx
+    // Expected format: YYYYMMDD-HHMMSS-ffffff (microseconds within the
+    // second, so directory names sort in true creation order).
     let parts: Vec<&str> = id.split('-').collect();
     assert_eq!(
         parts.len(),
@@ -15,7 +16,7 @@ fn test_session_id_format() {
 
     let date_part = parts[0];
     let time_part = parts[1];
-    let hex_part = parts[2];
+    let micros_part = parts[2];
 
     assert_eq!(
         date_part.len(),
@@ -40,15 +41,15 @@ fn test_session_id_format() {
     );
 
     assert_eq!(
-        hex_part.len(),
-        4,
-        "Hex part should be 4 chars: got '{}'",
-        hex_part
+        micros_part.len(),
+        6,
+        "Micros part should be 6 chars (ffffff): got '{}'",
+        micros_part
     );
     assert!(
-        hex_part.chars().all(|c| c.is_ascii_hexdigit()),
-        "Hex part should be valid hex chars: got '{}'",
-        hex_part
+        micros_part.chars().all(|c| c.is_ascii_digit()),
+        "Micros part should be all digits: got '{}'",
+        micros_part
     );
 }
 
