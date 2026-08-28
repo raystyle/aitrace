@@ -20,6 +20,13 @@ try {
     if ((Test-Path $marker) -and (Get-Item $marker).LastWriteTime -ge (Get-Item $edits).LastWriteTime) { exit 0 }
 
     [Console]::Error.WriteLine('[aitrace] New edits recorded since the last phase-7 pass. Run the aitrace skill phase 7 now: patch/diff introspection, update docs/timeline memory, conservation check (produce >=1 AND consume >=1 TODOs, each with DoD), then refresh the marker so this reminder stays quiet: powershell -NoProfile -Command "New-Item -ItemType File -Force .aitrace/.last-stage7 | Out-Null"')
+    # Surface the mechanical conservation verdict with the reminder: run it
+    # BEFORE committing the memory update (the uncommitted delta is the round).
+    $checker = Join-Path $project '.claude\scripts\conservation-check.ps1'
+    if (Test-Path $checker) {
+        $result = powershell -NoProfile -File $checker 2>&1 | Out-String
+        [Console]::Error.WriteLine("[aitrace] conservation: $($result.Trim())")
+    }
     exit 2
 } catch {
     exit 0

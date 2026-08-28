@@ -84,7 +84,7 @@ allowed-tools: Read Grep Glob Bash(cargo test *) Bash(cargo build *) mcp__aitrac
    - **最小化**：改动行数与问题规模是否相称，有无顺手重构
    异常项当场修正或写入待办
 4. 写入 `docs/timeline/<YYYY-MM-DD>.md`（同日追加，中文），含五节：**今日轨迹**（会话→提交的叙事）、**操作意图时间线**、**文件修改分析**、**经验教训 → 代码与 SKILL 改进项**、**待办**
-5. **待办守恒检查（自洽公理）**：本轮 产 ≥1（新待办或新发现）且 消 ≥1（推进/关闭一项旧待办），每项新待办必带 DoD——只有产出没有消费 = 积压违规；为凑数写无 DoD 的垃圾待办 = Goodhart 违规；两者都使本轮无效。若确实无新发现，把"为什么没找到"本身写成待办（反思自省盲区）。计数用脚本机检：`powershell -NoProfile -File .claude/scripts/conservation-check.ps1`（closed=0 即违规）
+5. **待办守恒检查（自洽公理）**：本轮 产 ≥1（新待办或新发现）且 消 ≥1（推进/关闭一项旧待办），每项新待办必带 DoD——只有产出没有消费 = 积压违规；为凑数写无 DoD 的垃圾待办 = Goodhart 违规；两者都使本轮无效。**收尾轮豁免**：池中仅剩不可立即推进项时，记忆中标注"收尾轮"并用 `-AllowNoProduce` 开关，产 0 合法。**机检**：更新记忆文件后、提交前运行 `powershell -NoProfile -File .claude/scripts/conservation-check.ps1`——按未提交增量统计本轮产消（顺序很重要：先跑脚本后 commit，否则增量归零）
 6. 教训若指向流程或工具缺陷，**同步修订本 SKILL 或 CLAUDE.md**——完成"记录 → 改进"闭环，而不是只记不用；规则修订本身受自洽公理约束（绑检查、带终止、不重复）
 7. 新会话开工按阶段 0 取件，继承上下文与待办
 8. 收尾最后一步刷新 marker（Stop 提醒的终止 guard）：`New-Item -ItemType File -Force .aitrace/.last-stage7 | Out-Null`——必须在记忆文件最后一次编辑**之后**执行
