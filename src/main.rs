@@ -91,7 +91,6 @@ enum DaemonCommands {
 }
 
 fn main() -> anyhow::Result<()> {
-    #[cfg(windows)]
     let cli = Cli::parse();
 
     // Black box for crashes: every panic is appended to

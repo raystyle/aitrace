@@ -10,6 +10,7 @@ use anyhow::Result;
 
 use crate::project::daemon_pid_search_roots;
 
+#[cfg(windows)]
 use super::pid;
 use super::{pid_path, stop_one_daemon};
 
