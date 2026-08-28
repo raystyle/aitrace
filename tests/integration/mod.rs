@@ -1,6 +1,7 @@
 pub mod blast_radius_test;
 pub mod config_test;
 pub mod daemon_hook_race_test;
+pub mod guard;
 pub mod hook_test;
 pub mod import_test;
 pub mod mcp_test;

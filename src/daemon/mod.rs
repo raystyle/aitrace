@@ -3,6 +3,7 @@ pub mod correlation;
 pub mod hook_listener;
 pub mod intent_index;
 pub mod pid;
+pub mod reap;
 
 use std::io::Write;
 use std::path::PathBuf;
@@ -24,8 +25,12 @@ use hook_listener::SocketMessage;
 
 /// Standard filesystem locations for daemon artifacts, relative to
 /// `<project>/.aitrace/`.
-fn pid_path(project_path: &std::path::Path) -> PathBuf {
+pub(crate) fn pid_path(project_path: &std::path::Path) -> PathBuf {
     project_path.join(".aitrace").join("daemon.pid")
+}
+
+pub(crate) fn sock_path(project_path: &std::path::Path) -> PathBuf {
+    project_path.join(".aitrace").join("daemon.sock")
 }
 
 /// Point tracing at `<project>/.aitrace/daemon.log` (append, DEBUG level).
@@ -112,10 +117,6 @@ fn load_backfill(sessions_dir: &std::path::Path, current_id: &str) -> Vec<Backfi
         }
     }
     Vec::new()
-}
-
-fn sock_path(project_path: &std::path::Path) -> PathBuf {
-    project_path.join(".aitrace").join("daemon.sock")
 }
 
 /// Run the daemon process.
@@ -722,10 +723,25 @@ pub fn start_daemon(project_path: &std::path::Path) -> Result<(i32, String)> {
     }
 }
 
-/// Stop a running daemon by sending a stop command over the local socket.
+/// Stop daemons for this package, including ones leaked under `target/debug`.
 ///
-/// Falls back to SIGTERM (Unix) or TerminateProcess (Windows) after 5 seconds.
+/// Also terminates leftover `--daemon-child` processes (not MCP).
 pub fn stop_daemon(project_path: &std::path::Path) -> Result<()> {
+    let report = reap::reap(project_path)?;
+    if report.is_empty() && report.errors.is_empty() {
+        anyhow::bail!("no daemon running (PID file not found)");
+    }
+    if !report.killed.is_empty()
+        || report.stopped_pid_files.len() > 1
+        || !report.removed_old.is_empty()
+    {
+        println!("{}", report.summary());
+    }
+    Ok(())
+}
+
+/// Stop the daemon whose pid file lives at `<project>/.aitrace/daemon.pid`.
+pub(crate) fn stop_one_daemon(project_path: &std::path::Path) -> Result<()> {
     let pid_file = pid_path(project_path);
     let sock_file = sock_path(project_path);
 

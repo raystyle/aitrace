@@ -101,6 +101,8 @@ enum DaemonCommands {
     Start,
     /// Stop the background recorder
     Stop,
+    /// Kill leftover --daemon-child processes (not MCP) and stale pid files
+    Reap,
     /// Show daemon status
     Status,
 }
@@ -170,6 +172,16 @@ fn main() -> anyhow::Result<()> {
                 DaemonCommands::Stop => match aitrace::daemon::stop_daemon(&project_path) {
                     Ok(()) => {
                         println!("daemon stopped");
+                    }
+                    Err(e) => {
+                        eprintln!("error: {}", e);
+                        std::process::exit(1);
+                    }
+                },
+
+                DaemonCommands::Reap => match aitrace::daemon::reap::reap(&project_path) {
+                    Ok(report) => {
+                        println!("{}", report.summary());
                     }
                     Err(e) => {
                         eprintln!("error: {}", e);
@@ -661,10 +673,11 @@ fn attach_parent_console() {
 
 /// Resolve the project path from an optional CLI argument (defaults to cwd).
 fn resolve_path(arg: Option<&str>) -> anyhow::Result<PathBuf> {
-    match arg {
-        Some(p) => Ok(PathBuf::from(p)),
-        None => Ok(std::env::current_dir()?),
-    }
+    let raw = match arg {
+        Some(p) => PathBuf::from(p),
+        None => std::env::current_dir()?,
+    };
+    Ok(aitrace::project::workspace_root(&raw))
 }
 
 /// Load config from `.aitrace/config.toml`, falling back to defaults.

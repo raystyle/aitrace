@@ -80,7 +80,7 @@ aitrace mcp   # 启动 stdio JSON-RPC 服务器
 
 每次回归 / 验收必须能回答"测的是哪个构建"：
 
-1. **先停 daemon 再构建**——daemon 子进程从 `target\debug\aitrace.exe` 运行，否则链接器报 os error 5
+1. **先停 daemon 再构建**——`aitrace daemon stop`（会顺带 reap `target\debug` 里误启动的 `--daemon-child`）。残留进程用 `aitrace daemon reap`（只杀 daemon，不杀 MCP）。cwd 不要设成 `target\debug`。
 2. `target\debug\aitrace.exe daemon start` 自动把新 exe 装进 `.aitrace/bin/`（目标被锁时改名 `aitrace.exe.old` 让路）
 3. **MCP server 不会自动升级**——`initialize` 回报 `serverInfo.version`（crate 版本），`/mcp` 检查；版本过期须重连 MCP（或重启 Claude Code）后再验收 MCP 侧改动
 4. 报告必须写明 **git 短哈希 + 小版本号**

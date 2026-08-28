@@ -17,7 +17,7 @@ aitrace mcp
 
 ## 编译 / 测试 / 部署流程（必须遵守）
 
-1. **先停 daemon 再构建**：`.aitrace\bin\aitrace.exe daemon stop` → `cargo build` / `cargo test`。daemon 子进程从 `target\debug\aitrace.exe` 运行，不停则链接报 os error 5。
+1. **先停 daemon 再构建**：`target\debug\aitrace.exe daemon stop`（会顺带 reap `target\debug` 下误启动的 `--daemon-child`）→ `cargo build` / `cargo test`。daemon 子进程从 `target\debug\aitrace.exe` 运行，不停则链接报 os error 5。不要把 cwd 设成 `target\debug`。残留进程：`aitrace daemon reap`（只杀 `--daemon-child`，不杀 MCP）。
 2. **部署**：`target\debug\aitrace.exe daemon start` 自动把运行中的 exe 装进 `.aitrace/bin/`（目标被锁时改名 `aitrace.exe.old` 让路）。hook 与 MCP 必须调用该项目二进制，不是 PATH 上的全局 `aitrace`——PATH 安装只是为了手敲方便。
 3. **MCP server 不随部署升级**：涉及 `src/mcp/`（或其依赖的 lib）的改动，验收前提醒人类重连 `/mcp`，并机检 `serverInfo.buildHash` == 当前 git 短哈希（`daemon status` 同理显示 version/build_hash）。
 4. **验收标记**：每次回归 / 验收报告必须写 git 短哈希 + crate 版本。完整流程见 `.claude/skills/aitrace/SKILL.md` 的「受测二进制的验证」。

@@ -40,7 +40,7 @@ pub fn install_project_bin(project: &Path) -> Result<PathBuf> {
         // Locked destination: move the running exe aside so the copy can
         // land at the canonical path. A stale `.old` from a previous update
         // is replaced.
-        let aside = dest.with_extension("exe.old");
+        let aside = unique_old_path(&dest);
         let _ = std::fs::remove_file(&aside);
         if std::fs::rename(&dest, &aside).is_err() || std::fs::copy(&src, &dest).is_err() {
             // Rename failed too (e.g. aside is locked as well): restore the
@@ -66,6 +66,14 @@ pub fn install_project_bin(project: &Path) -> Result<PathBuf> {
     }
 
     Ok(dest)
+}
+
+fn unique_old_path(dest: &Path) -> PathBuf {
+    let base = dest.with_extension("exe.old");
+    if std::fs::remove_file(&base).is_ok() || !base.exists() {
+        return base;
+    }
+    dest.with_extension(format!("exe.old.{}", std::process::id()))
 }
 
 fn paths_equal(a: &Path, b: &Path) -> bool {

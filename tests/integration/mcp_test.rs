@@ -1,19 +1,22 @@
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 
 use serde_json::{Value, json};
 
-fn start_mcp_server(project_dir: &Path) -> Child {
+use super::guard::ChildGuard;
+
+fn start_mcp_server(project_dir: &Path) -> ChildGuard {
     let bin = env!("CARGO_BIN_EXE_aitrace");
-    Command::new(bin)
+    let child = Command::new(bin)
         .arg(project_dir.to_str().unwrap())
         .arg("mcp")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
-        .expect("start aitrace mcp")
+        .expect("start aitrace mcp");
+    ChildGuard(child)
 }
 
 fn send_request(
@@ -44,8 +47,8 @@ fn test_mcp_initialize_and_list_tools() {
     std::fs::create_dir_all(&sessions_dir).unwrap();
 
     let mut child = start_mcp_server(dir.path());
-    let mut stdin = child.stdin.take().unwrap();
-    let mut stdout = BufReader::new(child.stdout.take().unwrap());
+    let mut stdin = child.0.stdin.take().unwrap();
+    let mut stdout = BufReader::new(child.0.stdout.take().unwrap());
 
     // Send "initialize" request
     let resp = send_request(&mut stdin, &mut stdout, "initialize", 1, json!({}));
@@ -71,7 +74,7 @@ fn test_mcp_initialize_and_list_tools() {
 
     // Close stdin and wait for process
     drop(stdin);
-    child.wait().unwrap();
+    let _ = child.0.wait();
 }
 
 #[test]
@@ -100,8 +103,8 @@ fn test_mcp_tools_call_list_sessions() {
     std::fs::write(session_dir.join("edits.jsonl"), "").unwrap();
 
     let mut child = start_mcp_server(dir.path());
-    let mut stdin = child.stdin.take().unwrap();
-    let mut stdout = BufReader::new(child.stdout.take().unwrap());
+    let mut stdin = child.0.stdin.take().unwrap();
+    let mut stdout = BufReader::new(child.0.stdout.take().unwrap());
 
     // Initialize first -- the build hash must be present so "which binary"
     // checks are mechanical.
@@ -148,5 +151,5 @@ fn test_mcp_tools_call_list_sessions() {
 
     // Close stdin and wait for process
     drop(stdin);
-    child.wait().unwrap();
+    let _ = child.0.wait();
 }

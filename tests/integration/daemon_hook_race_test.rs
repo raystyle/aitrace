@@ -34,14 +34,13 @@ impl Drop for DaemonGuard {
 }
 
 fn spawn_daemon(project: &Path) -> DaemonGuard {
-    let child: Child = Command::new(bin())
-        .arg("--daemon-child")
+    let mut cmd = Command::new(bin());
+    cmd.arg("--daemon-child")
         .arg(project.to_str().unwrap())
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("spawn daemon child");
+        .stderr(Stdio::null());
+    let child: Child = cmd.spawn().expect("spawn daemon child");
     DaemonGuard(child)
 }
 

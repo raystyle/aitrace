@@ -1,6 +1,8 @@
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
+
+use super::guard::ChildGuard;
 
 use serde_json::{Value, json};
 
@@ -11,16 +13,17 @@ use aitrace::snapshot::store::SnapshotStore;
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-fn start_mcp(project_dir: &Path) -> Child {
+fn start_mcp(project_dir: &Path) -> ChildGuard {
     let bin = env!("CARGO_BIN_EXE_aitrace");
-    Command::new(bin)
+    let child = Command::new(bin)
         .arg(project_dir.to_str().unwrap())
         .arg("mcp")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
-        .expect("start aitrace mcp")
+        .expect("start aitrace mcp");
+    ChildGuard(child)
 }
 
 fn send(
@@ -182,8 +185,8 @@ fn test_full_self_correction_workflow() {
 
     // 2. Start MCP server
     let mut child = start_mcp(dir.path());
-    let mut stdin = child.stdin.take().unwrap();
-    let mut stdout = BufReader::new(child.stdout.take().unwrap());
+    let mut stdin = child.0.stdin.take().unwrap();
+    let mut stdout = BufReader::new(child.0.stdout.take().unwrap());
 
     // 3a. Initialize
     let resp = send(&mut stdin, &mut stdout, "initialize", 1, json!({}));
@@ -343,5 +346,5 @@ fn test_full_self_correction_workflow() {
 
     // Clean up
     drop(stdin);
-    child.wait().unwrap();
+    let _ = child.0.wait();
 }

@@ -20,6 +20,7 @@ pub mod import;
 pub mod install;
 pub mod ipc;
 pub mod mcp;
+pub mod project;
 pub mod recorder;
 pub mod restore;
 pub mod session;
