@@ -353,10 +353,7 @@ impl Widget for CommandPaletteWidget<'_> {
                         self.theme_fg
                     };
 
-                    let shortcut_text = entry
-                        .shortcut
-                        .as_deref()
-                        .unwrap_or("");
+                    let shortcut_text = entry.shortcut.as_deref().unwrap_or("");
                     let label_max = (inner.width as usize)
                         .saturating_sub(4) // leading padding
                         .saturating_sub(shortcut_text.len())
@@ -370,30 +367,18 @@ impl Widget for CommandPaletteWidget<'_> {
                         .saturating_sub(1);
 
                     let line = Line::from(vec![
-                        Span::styled(
-                            "  ",
-                            Style::default().fg(fg).bg(bg),
-                        ),
+                        Span::styled("  ", Style::default().fg(fg).bg(bg)),
                         Span::styled(
                             if *selected { "> " } else { "  " },
                             Style::default().fg(self.theme_accent).bg(bg),
                         ),
-                        Span::styled(
-                            display_label,
-                            Style::default().fg(fg).bg(bg),
-                        ),
-                        Span::styled(
-                            " ".repeat(padding),
-                            Style::default().bg(bg),
-                        ),
+                        Span::styled(display_label, Style::default().fg(fg).bg(bg)),
+                        Span::styled(" ".repeat(padding), Style::default().bg(bg)),
                         Span::styled(
                             shortcut_text.to_string(),
                             Style::default().fg(self.theme_fg_dim).bg(bg),
                         ),
-                        Span::styled(
-                            " ",
-                            Style::default().bg(bg),
-                        ),
+                        Span::styled(" ", Style::default().bg(bg)),
                     ]);
                     line.render(row_rect, buf);
                 }
@@ -625,7 +610,11 @@ mod tests {
         cp.push_char('e');
         assert_eq!(cp.input, "re");
         // "Restore File" matches
-        assert!(cp.filtered.iter().any(|&i| cp.entries[i].id == "restore_file"));
+        assert!(
+            cp.filtered
+                .iter()
+                .any(|&i| cp.entries[i].id == "restore_file")
+        );
 
         cp.pop_char();
         assert_eq!(cp.input, "r");

@@ -1,4 +1,4 @@
-//! Startup intro animation for the vibetracer TUI.
+//! Startup intro animation for the aitrace TUI.
 //!
 //! Plays a fast (~1.5s) cockpit power-on sequence before the main UI appears.
 
@@ -82,9 +82,7 @@ pub fn play_intro(
     terminal.draw(|frame| {
         let area = frame.area();
         let f = IntroFrame {
-            lines: vec![
-                (logo_style, "v  i  b  e  t  r  a  c  e  r".to_string()),
-            ],
+            lines: vec![(logo_style, "a  i  t  r  a  c  e".to_string())],
         };
         f.render_centered(area, frame.buffer_mut(), bg);
     })?;
@@ -98,7 +96,7 @@ pub fn play_intro(
         let f = IntroFrame {
             lines: vec![
                 (box_style, format!("\u{250c}{}\u{2510}", border)),
-                (logo_style, "v i b e t r a c e r".to_string()),
+                (logo_style, "a i t r a c e".to_string()),
                 (box_style, format!("\u{2514}{}\u{2518}", border)),
             ],
         };
@@ -114,7 +112,7 @@ pub fn play_intro(
         let f = IntroFrame {
             lines: vec![
                 (box_style, format!("\u{250c}{}\u{2510}", border)),
-                (logo_style, "v i b e t r a c e r".to_string()),
+                (logo_style, "a i t r a c e".to_string()),
                 (dim_style, String::new()),
                 (tagline_style, "trace  .  replay  .  rewind".to_string()),
                 (box_style, format!("\u{2514}{}\u{2518}", border)),
@@ -141,7 +139,7 @@ pub fn play_intro(
 
             let mut lines: Vec<(Style, String)> = vec![
                 (box_style, format!("\u{250c}{}\u{2510}", border)),
-                (logo_style, "v i b e t r a c e r".to_string()),
+                (logo_style, "a i t r a c e".to_string()),
                 (dim_style, String::new()),
                 (tagline_style, "trace  .  replay  .  rewind".to_string()),
                 (box_style, format!("\u{2514}{}\u{2518}", border)),
@@ -207,7 +205,7 @@ pub fn play_intro(
 
         let mut lines: Vec<(Style, String)> = vec![
             (box_style, format!("\u{250c}{}\u{2510}", border)),
-            (logo_style, "v i b e t r a c e r".to_string()),
+            (logo_style, "a i t r a c e".to_string()),
             (dim_style, String::new()),
             (tagline_style, "trace  .  replay  .  rewind".to_string()),
             (box_style, format!("\u{2514}{}\u{2518}", border)),

@@ -42,8 +42,7 @@ impl AgentImporter for ClaudeImporter {
 /// e.g. `/Users/foo/bar` -> `-Users-foo-bar`
 fn path_to_claude_dir(path: &Path) -> String {
     let s = path.to_string_lossy();
-    // Replace path separators with hyphens, leading `/` becomes leading `-`
-    s.replace('/', "-")
+    s.replace(['/', '\\'], "-")
 }
 
 /// List all Claude Code sessions for the given project path.
@@ -375,6 +374,10 @@ mod tests {
         assert_eq!(
             path_to_claude_dir(Path::new("/Users/foo/my-project")),
             "-Users-foo-my-project"
+        );
+        assert_eq!(
+            path_to_claude_dir(Path::new(r"C:\Users\foo\bar")),
+            "C:-Users-foo-bar"
         );
     }
 

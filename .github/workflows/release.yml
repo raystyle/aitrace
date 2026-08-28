@@ -43,20 +43,10 @@ jobs:
       - name: Package
         run: |
           cd target/${{ matrix.target }}/release
-          tar czf vibetracer-${{ matrix.target }}.tar.gz vibetracer
-          mv vibetracer-${{ matrix.target }}.tar.gz ../../../
+          tar czf aitrace-${{ matrix.target }}.tar.gz aitrace
+          mv aitrace-${{ matrix.target }}.tar.gz ../../../
 
       - name: Upload
         uses: softprops/action-gh-release@v2
         with:
-          files: vibetracer-${{ matrix.target }}.tar.gz
-
-  publish-crate:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - run: cargo publish
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          files: aitrace-${{ matrix.target }}.tar.gz

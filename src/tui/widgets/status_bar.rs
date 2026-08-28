@@ -6,8 +6,8 @@ use ratatui::{
     widgets::Widget,
 };
 
-use crate::tui::{App, PlaybackState};
 use crate::tui::app::Mode;
+use crate::tui::{App, PlaybackState};
 
 /// Duration (in seconds) to flash the theme name after a theme change.
 const THEME_FLASH_SECS: u64 = 2;
@@ -94,21 +94,35 @@ impl Widget for StatusBar<'_> {
         ];
 
         // Playback state
-        let pb_flashing = self.app.playback_flash
+        let pb_flashing = self
+            .app
+            .playback_flash
             .map(|t| t.elapsed().as_millis() < 500)
             .unwrap_or(false);
 
         match &self.app.playback {
             PlaybackState::Live => {
-                let c = if pb_flashing { color_accent } else { color_live };
+                let c = if pb_flashing {
+                    color_accent
+                } else {
+                    color_live
+                };
                 left_spans.push(Span::styled("live", Style::default().fg(c)));
             }
             PlaybackState::Paused => {
-                let c = if pb_flashing { color_accent } else { color_paused };
+                let c = if pb_flashing {
+                    color_accent
+                } else {
+                    color_paused
+                };
                 left_spans.push(Span::styled("paused", Style::default().fg(c)));
             }
             PlaybackState::Playing { speed } => {
-                let c = if pb_flashing { color_accent } else { color_speed };
+                let c = if pb_flashing {
+                    color_accent
+                } else {
+                    color_speed
+                };
                 left_spans.push(Span::styled(format!("{speed}x"), Style::default().fg(c)));
             }
         }
@@ -184,7 +198,10 @@ impl Widget for StatusBar<'_> {
                 self.app.search_input.as_str(),
                 Style::default().fg(color_val),
             ));
-            left_spans.push(Span::styled("\u{2588}", Style::default().fg(t.accent_purple)));
+            left_spans.push(Span::styled(
+                "\u{2588}",
+                Style::default().fg(t.accent_purple),
+            ));
         }
 
         // ── right side ───────────────────────────────────────────────────────

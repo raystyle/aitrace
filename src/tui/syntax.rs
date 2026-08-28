@@ -22,7 +22,7 @@ pub type HighlightedLine = Vec<StyledSegment>;
 
 // ── Highlighter ─────────────────────────────────────────────────────────────
 
-/// Wraps syntect and provides syntax-highlighted lines using vibetracer themes.
+/// Wraps syntect and provides syntax-highlighted lines using aitrace themes.
 pub struct Highlighter {
     syntax_set: SyntaxSet,
 }
@@ -41,7 +41,7 @@ impl Highlighter {
         }
     }
 
-    /// Highlight the given file content using the vibetracer theme.
+    /// Highlight the given file content using the aitrace theme.
     ///
     /// Detects syntax from the file extension. Returns one `HighlightedLine` per
     /// line in `content`.
@@ -142,7 +142,7 @@ pub fn theme_item(scope_str: &str, color: RatColor, italic: bool) -> ThemeItem {
     }
 }
 
-/// Build a syntect `Theme` from a vibetracer `Theme` by mapping semantic scopes.
+/// Build a syntect `Theme` from an aitrace `Theme` by mapping semantic scopes.
 fn build_syn_theme(theme: &Theme) -> SynTheme {
     let transparent = SynColor {
         r: 0,
@@ -172,7 +172,7 @@ fn build_syn_theme(theme: &Theme) -> SynTheme {
     ];
 
     SynTheme {
-        name: Some("vibetracer".to_string()),
+        name: Some("aitrace".to_string()),
         author: None,
         settings,
         scopes,

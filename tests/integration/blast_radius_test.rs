@@ -1,6 +1,6 @@
+use aitrace::analysis::blast_radius::BlastRadiusTracker;
+use aitrace::config::{BlastRadiusConfig, ManualDependency};
 use std::collections::HashSet;
-use vibetracer::analysis::blast_radius::BlastRadiusTracker;
-use vibetracer::config::{BlastRadiusConfig, ManualDependency};
 
 fn make_config() -> BlastRadiusConfig {
     BlastRadiusConfig {

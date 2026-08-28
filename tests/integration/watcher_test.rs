@@ -1,9 +1,9 @@
+use aitrace::watcher::differ::compute_diff;
+use aitrace::watcher::fs_watcher::FsWatcher;
 use std::fs;
 use std::sync::mpsc;
 use std::time::Duration;
 use tempfile::tempdir;
-use vibetracer::watcher::differ::compute_diff;
-use vibetracer::watcher::fs_watcher::FsWatcher;
 
 // ─── Differ tests ─────────────────────────────────────────────────────────────
 

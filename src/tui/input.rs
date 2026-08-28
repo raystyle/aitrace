@@ -561,7 +561,11 @@ pub fn apply_action(app: &mut App, action: Action) {
             if app.blame_visible {
                 app.annotations_visible = false; // mutually exclusive
             }
-            let msg = if app.blame_visible { "blame: on" } else { "blame: off" };
+            let msg = if app.blame_visible {
+                "blame: on"
+            } else {
+                "blame: off"
+            };
             app.show_toast(msg.to_string(), crate::tui::app::ToastStyle::Info);
         }
         Action::ToggleAnnotations => {
@@ -569,7 +573,11 @@ pub fn apply_action(app: &mut App, action: Action) {
             if app.annotations_visible {
                 app.blame_visible = false; // mutually exclusive
             }
-            let msg = if app.annotations_visible { "annotations: on" } else { "annotations: off" };
+            let msg = if app.annotations_visible {
+                "annotations: on"
+            } else {
+                "annotations: off"
+            };
             app.show_toast(msg.to_string(), crate::tui::app::ToastStyle::Info);
         }
         Action::MaximizePanel => {

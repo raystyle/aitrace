@@ -172,14 +172,15 @@ impl Widget for BookmarkListWidget<'_> {
                 Span::styled(
                     prefix,
                     Style::default()
-                        .fg(if is_selected { th.accent_warm } else { th.fg_dim })
+                        .fg(if is_selected {
+                            th.accent_warm
+                        } else {
+                            th.fg_dim
+                        })
                         .bg(bg),
                 ),
                 Span::styled(index_str, Style::default().fg(th.fg_muted).bg(bg)),
-                Span::styled(
-                    format!(" {}", label),
-                    Style::default().fg(fg).bg(bg),
-                ),
+                Span::styled(format!(" {}", label), Style::default().fg(fg).bg(bg)),
                 Span::styled(" ".repeat(right_pad), Style::default().bg(bg)),
             ]);
 

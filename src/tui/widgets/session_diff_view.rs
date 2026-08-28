@@ -150,14 +150,8 @@ impl Widget for SessionDiffView<'_> {
                     if is_selected { " > " } else { "   " },
                     Style::default().fg(self.theme.accent_warm).bg(bg),
                 ),
-                Span::styled(
-                    display_name,
-                    Style::default().fg(self.theme.fg).bg(bg),
-                ),
-                Span::styled(
-                    " ".repeat(name_pad),
-                    Style::default().bg(bg),
-                ),
+                Span::styled(display_name, Style::default().fg(self.theme.fg).bg(bg)),
+                Span::styled(" ".repeat(name_pad), Style::default().bg(bg)),
                 Span::styled(
                     format!("{:>5}", edits_str),
                     Style::default().fg(self.theme.fg_muted).bg(bg),
@@ -271,10 +265,7 @@ fn build_file_row(
     let pad = name_col.saturating_sub(display.len());
 
     Line::from(vec![
-        Span::styled(
-            format!("   {}", display),
-            Style::default().fg(color),
-        ),
+        Span::styled(format!("   {}", display), Style::default().fg(color)),
         Span::styled(" ".repeat(pad), Style::default()),
         Span::styled(format!("{:>5}", edits), Style::default().fg(color)),
         Span::styled(format!("{:>8}", added), Style::default().fg(color)),

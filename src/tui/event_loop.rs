@@ -5,8 +5,8 @@ use crate::checkpoint::CheckpointManager;
 use crate::config::Config;
 use crate::event::EditEvent;
 use crate::recorder::Recorder;
-use crate::tui::{App, SidebarPanel, input, layout, widgets};
 use crate::tui::app::Mode;
+use crate::tui::{App, SidebarPanel, input, layout, widgets};
 use anyhow::Result;
 use crossterm::event::{self as ct_event, Event, KeyEventKind};
 use ratatui::{
@@ -44,7 +44,11 @@ struct HorizontalSep {
 }
 impl Widget for HorizontalSep {
     fn render(self, area: Rect, buf: &mut ratatui::buffer::Buffer) {
-        let color = if self.focused { self.focus_color } else { self.color };
+        let color = if self.focused {
+            self.focus_color
+        } else {
+            self.color
+        };
         let line = "─".repeat(area.width as usize);
         buf.set_string(area.x, area.y, &line, Style::default().fg(color));
     }
@@ -155,7 +159,12 @@ pub fn run_event_loop(
                 return;
             }
 
-            let lo = layout::compute_layout(area, app.sidebar_visible, app.dashboard_visible, app.conversation_visible);
+            let lo = layout::compute_layout(
+                area,
+                app.sidebar_visible,
+                app.dashboard_visible,
+                app.conversation_visible,
+            );
 
             // Store layout for mouse routing.
             app.last_layout = Some(lo.clone());
@@ -194,8 +203,10 @@ pub fn run_event_loop(
                 match app.sidebar_panel {
                     SidebarPanel::BlastRadius => {
                         if let Some((ref source, ref status)) = app.blast_radius_status {
-                            widgets::blast_radius_panel::BlastRadiusPanel::new(source, status, &app.theme)
-                                .render(sidebar_rect, buf);
+                            widgets::blast_radius_panel::BlastRadiusPanel::new(
+                                source, status, &app.theme,
+                            )
+                            .render(sidebar_rect, buf);
                         } else {
                             let msg = "no blast radius data";
                             buf.set_string(
@@ -207,12 +218,18 @@ pub fn run_event_loop(
                         }
                     }
                     SidebarPanel::Sentinels => {
-                        widgets::sentinel_panel::SentinelPanel::new(&app.sentinel_violations, &app.theme)
-                            .render(sidebar_rect, buf);
+                        widgets::sentinel_panel::SentinelPanel::new(
+                            &app.sentinel_violations,
+                            &app.theme,
+                        )
+                        .render(sidebar_rect, buf);
                     }
                     SidebarPanel::Watchdog => {
-                        widgets::watchdog_panel::WatchdogPanel::new(&app.watchdog_alerts, &app.theme)
-                            .render(sidebar_rect, buf);
+                        widgets::watchdog_panel::WatchdogPanel::new(
+                            &app.watchdog_alerts,
+                            &app.theme,
+                        )
+                        .render(sidebar_rect, buf);
                     }
                 }
             }
@@ -264,7 +281,8 @@ pub fn run_event_loop(
             // Keybindings bar — mode-aware.
             let kb_sep = Span::styled(" \u{2502} ", Style::default().fg(app.theme.separator));
             let kb_key = |k: &str| Span::styled(k.to_string(), Style::default().fg(app.theme.fg));
-            let kb_desc = |d: &str| Span::styled(d.to_string(), Style::default().fg(app.theme.fg_muted));
+            let kb_desc =
+                |d: &str| Span::styled(d.to_string(), Style::default().fg(app.theme.fg_muted));
 
             let mode_color = match app.mode {
                 Mode::Normal => app.theme.accent_green,
@@ -284,41 +302,82 @@ pub fn run_event_loop(
             match app.mode {
                 Mode::Normal => {
                     kb_spans.extend_from_slice(&[
-                        kb_key("Space"), kb_desc(":play"), kb_sep.clone(),
-                        kb_key("\u{2190}\u{2192}"), kb_desc(":scrub"), kb_sep.clone(),
-                        kb_key("t"), kb_desc(":timeline"), kb_sep.clone(),
-                        kb_key("i"), kb_desc(":inspect"), kb_sep.clone(),
-                        kb_key("/"), kb_desc(":search"), kb_sep.clone(),
-                        kb_key(":"), kb_desc(":cmd"), kb_sep.clone(),
-                        kb_key("d"), kb_desc(":diff"), kb_sep.clone(),
-                        kb_key("?"), kb_desc(":help"),
+                        kb_key("Space"),
+                        kb_desc(":play"),
+                        kb_sep.clone(),
+                        kb_key("\u{2190}\u{2192}"),
+                        kb_desc(":scrub"),
+                        kb_sep.clone(),
+                        kb_key("t"),
+                        kb_desc(":timeline"),
+                        kb_sep.clone(),
+                        kb_key("i"),
+                        kb_desc(":inspect"),
+                        kb_sep.clone(),
+                        kb_key("/"),
+                        kb_desc(":search"),
+                        kb_sep.clone(),
+                        kb_key(":"),
+                        kb_desc(":cmd"),
+                        kb_sep.clone(),
+                        kb_key("d"),
+                        kb_desc(":diff"),
+                        kb_sep.clone(),
+                        kb_key("?"),
+                        kb_desc(":help"),
                     ]);
                 }
                 Mode::Timeline => {
                     kb_spans.extend_from_slice(&[
-                        kb_key("\u{2190}\u{2192}"), kb_desc(":pan"), kb_sep.clone(),
-                        kb_key("\u{2191}\u{2193}"), kb_desc(":select"), kb_sep.clone(),
-                        kb_key("+/-"), kb_desc(":zoom"), kb_sep.clone(),
-                        kb_key("s"), kb_desc(":solo"), kb_sep.clone(),
-                        kb_key("m"), kb_desc(":mute"), kb_sep.clone(),
-                        kb_key("Enter"), kb_desc(":jump"), kb_sep.clone(),
-                        kb_key("Esc"), kb_desc(":back"),
+                        kb_key("\u{2190}\u{2192}"),
+                        kb_desc(":pan"),
+                        kb_sep.clone(),
+                        kb_key("\u{2191}\u{2193}"),
+                        kb_desc(":select"),
+                        kb_sep.clone(),
+                        kb_key("+/-"),
+                        kb_desc(":zoom"),
+                        kb_sep.clone(),
+                        kb_key("s"),
+                        kb_desc(":solo"),
+                        kb_sep.clone(),
+                        kb_key("m"),
+                        kb_desc(":mute"),
+                        kb_sep.clone(),
+                        kb_key("Enter"),
+                        kb_desc(":jump"),
+                        kb_sep.clone(),
+                        kb_key("Esc"),
+                        kb_desc(":back"),
                     ]);
                 }
                 Mode::Inspect => {
                     kb_spans.extend_from_slice(&[
-                        kb_key("n"), kb_desc(":next"), kb_sep.clone(),
-                        kb_key("p"), kb_desc(":prev"), kb_sep.clone(),
-                        kb_key("d"), kb_desc(":diff"), kb_sep.clone(),
-                        kb_key("f"), kb_desc(":file"), kb_sep.clone(),
-                        kb_key("Esc"), kb_desc(":back"),
+                        kb_key("n"),
+                        kb_desc(":next"),
+                        kb_sep.clone(),
+                        kb_key("p"),
+                        kb_desc(":prev"),
+                        kb_sep.clone(),
+                        kb_key("d"),
+                        kb_desc(":diff"),
+                        kb_sep.clone(),
+                        kb_key("f"),
+                        kb_desc(":file"),
+                        kb_sep.clone(),
+                        kb_key("Esc"),
+                        kb_desc(":back"),
                     ]);
                 }
                 Mode::Search => {
                     kb_spans.extend_from_slice(&[
-                        kb_desc("type to filter"), kb_sep.clone(),
-                        kb_key("Enter"), kb_desc(":lock"), kb_sep.clone(),
-                        kb_key("Esc"), kb_desc(":clear"),
+                        kb_desc("type to filter"),
+                        kb_sep.clone(),
+                        kb_key("Enter"),
+                        kb_desc(":lock"),
+                        kb_sep.clone(),
+                        kb_key("Esc"),
+                        kb_desc(":clear"),
                     ]);
                 }
             }
@@ -350,7 +409,8 @@ pub fn run_event_loop(
                     theme_fg_dim: app.theme.fg_muted,
                     theme_accent: app.theme.accent_warm,
                     theme_separator: app.theme.separator,
-                }.render(area, buf);
+                }
+                .render(area, buf);
             }
 
             // Bookmark list popup overlay (on top of everything).
@@ -410,12 +470,13 @@ pub fn run_event_loop(
                 Event::Key(key) => {
                     // Ignore key-release events on platforms that emit them.
                     if key.kind == KeyEventKind::Press || key.kind == KeyEventKind::Repeat {
-
                         // ── Command palette key routing ──────────────────────
                         if app.command_palette.visible {
                             use crossterm::event::KeyCode;
                             match key.code {
-                                KeyCode::Esc => { app.command_palette.close(); }
+                                KeyCode::Esc => {
+                                    app.command_palette.close();
+                                }
                                 KeyCode::Enter => {
                                     // Check if the raw input is a :diff command before
                                     // confirming via the filtered entry list.
@@ -428,10 +489,18 @@ pub fn run_event_loop(
                                         dispatch_palette_action(app, &action_id);
                                     }
                                 }
-                                KeyCode::Up => { app.command_palette.select_up(); }
-                                KeyCode::Down => { app.command_palette.select_down(); }
-                                KeyCode::Backspace => { app.command_palette.pop_char(); }
-                                KeyCode::Char(c) => { app.command_palette.push_char(c); }
+                                KeyCode::Up => {
+                                    app.command_palette.select_up();
+                                }
+                                KeyCode::Down => {
+                                    app.command_palette.select_down();
+                                }
+                                KeyCode::Backspace => {
+                                    app.command_palette.pop_char();
+                                }
+                                KeyCode::Char(c) => {
+                                    app.command_palette.push_char(c);
+                                }
                                 _ => {}
                             }
                             continue;
@@ -511,11 +580,8 @@ pub fn run_event_loop(
                                         // by edit_index and timestamp.
                                         let target_idx = bm.edit_index;
                                         let target_ts = bm.timestamp;
-                                        if let Some(pos) = app
-                                            .bookmark_manager
-                                            .bookmarks
-                                            .iter()
-                                            .position(|b| {
+                                        if let Some(pos) =
+                                            app.bookmark_manager.bookmarks.iter().position(|b| {
                                                 b.edit_index == target_idx
                                                     && b.timestamp == target_ts
                                             })
@@ -649,7 +715,9 @@ pub fn run_event_loop(
                         MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
                             let is_up = matches!(mouse.kind, MouseEventKind::ScrollUp);
 
-                            let in_preview = app.last_layout.as_ref()
+                            let in_preview = app
+                                .last_layout
+                                .as_ref()
                                 .map(|lo| {
                                     mouse.row >= lo.preview.y
                                         && mouse.row < lo.preview.y + lo.preview.height
@@ -658,7 +726,9 @@ pub fn run_event_loop(
                                 })
                                 .unwrap_or(false);
 
-                            let in_timeline = app.last_layout.as_ref()
+                            let in_timeline = app
+                                .last_layout
+                                .as_ref()
                                 .map(|lo| {
                                     mouse.row >= lo.timeline.y
                                         && mouse.row < lo.timeline.y + lo.timeline.height
@@ -851,9 +921,19 @@ pub fn register_palette_entries(palette: &mut widgets::command_palette::CommandP
         ("toggle_diff", "Toggle Diff / File View", Some("d"), "View"),
         ("toggle_commands", "Toggle Command View", Some("g"), "View"),
         ("toggle_dashboard", "Toggle Dashboard", Some("D"), "View"),
-        ("toggle_conversation", "Toggle Conversation", Some("C"), "View"),
+        (
+            "toggle_conversation",
+            "Toggle Conversation",
+            Some("C"),
+            "View",
+        ),
         ("toggle_blame", "Toggle Blame View", Some("B"), "View"),
-        ("toggle_annotations", "Toggle Annotations", Some("A"), "View"),
+        (
+            "toggle_annotations",
+            "Toggle Annotations",
+            Some("A"),
+            "View",
+        ),
         ("zoom_in", "Zoom Timeline In", Some("+"), "View"),
         ("zoom_out", "Zoom Timeline Out", Some("-"), "View"),
         ("zoom_reset", "Zoom Timeline Reset", Some("0"), "View"),
@@ -899,12 +979,24 @@ fn dispatch_palette_action(app: &mut App, action_id: &str) {
     use crate::theme::Theme;
 
     match action_id {
-        "play_pause" => { app.toggle_play(); app.playback_flash = Some(std::time::Instant::now()); }
+        "play_pause" => {
+            app.toggle_play();
+            app.playback_flash = Some(std::time::Instant::now());
+        }
         "scrub_left" => app.scrub_left(),
         "scrub_right" => app.scrub_right(),
-        "mode_timeline" => { app.mode = Mode::Timeline; app.mode_cursor = 0; app.focused_pane = crate::tui::Pane::Timeline; }
-        "mode_inspect" => { app.mode = Mode::Inspect; }
-        "mode_search" => { app.mode = Mode::Search; app.search_input.clear(); }
+        "mode_timeline" => {
+            app.mode = Mode::Timeline;
+            app.mode_cursor = 0;
+            app.focused_pane = crate::tui::Pane::Timeline;
+        }
+        "mode_inspect" => {
+            app.mode = Mode::Inspect;
+        }
+        "mode_search" => {
+            app.mode = Mode::Search;
+            app.search_input.clear();
+        }
         "toggle_diff" => input::apply_action(app, input::Action::TogglePreviewMode),
         "toggle_commands" => input::apply_action(app, input::Action::ToggleCommandView),
         "toggle_dashboard" => input::apply_action(app, input::Action::ToggleDashboard),
@@ -918,9 +1010,9 @@ fn dispatch_palette_action(app: &mut App, action_id: &str) {
         "zoom_reset" => input::apply_action(app, input::Action::ZoomTimelineReset),
         "solo_track" => input::apply_action(app, input::Action::SoloTrack),
         "mute_track" => input::apply_action(app, input::Action::MuteTrack),
-        "restore" => {} // Handled externally in event loop
+        "restore" => {}      // Handled externally in event loop
         "undo_restore" => {} // Handled externally in event loop
-        "checkpoint" => {} // Handled externally in event loop
+        "checkpoint" => {}   // Handled externally in event loop
         "session_diff" => {
             app.show_toast(
                 "use :diff <from> <to>".to_string(),

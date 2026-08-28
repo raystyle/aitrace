@@ -1,6 +1,6 @@
+use aitrace::analysis::sentinels::SentinelEngine;
+use aitrace::config::{PatternSpec, SentinelRule};
 use tempfile::tempdir;
-use vibetracer::analysis::sentinels::SentinelEngine;
-use vibetracer::config::{PatternSpec, SentinelRule};
 
 fn make_rule(description: &str, file_a: &str, file_b: &str, assertion: &str) -> SentinelRule {
     SentinelRule {

@@ -18,6 +18,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "aitrace"
+version = "0.6.2"
+dependencies = [
+ "anyhow",
+ "assert_cmd",
+ "chrono",
+ "clap",
+ "crossterm",
+ "dirs",
+ "glob",
+ "hex",
+ "libc",
+ "notify",
+ "notify-debouncer-mini",
+ "predicates",
+ "ratatui",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "similar",
+ "syntect",
+ "tempfile",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+ "uds_windows",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "allocator-api2"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -769,6 +800,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
 
 [[package]]
+name = "memoffset"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "488016bfae457b036d996092f6cb448677611ce4449e970ceaf42695203f218a"
+dependencies = [
+ "autocfg",
+]
+
+[[package]]
 name = "miniz_oxide"
 version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1486,6 +1526,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "562d481066bde0658276a35467c4af00bdc6ee726305698a55b86e61d7ad82bb"
 
 [[package]]
+name = "uds_windows"
+version = "1.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f2f6fb2847f6742cd76af783a2a2c49e9375d0a111c7bef6f71cd9e738c72d6e"
+dependencies = [
+ "memoffset",
+ "tempfile",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "unicode-ident"
 version = "1.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1543,35 +1594,6 @@ name = "version_check"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
-
-[[package]]
-name = "vibetracer"
-version = "0.6.2"
-dependencies = [
- "anyhow",
- "assert_cmd",
- "chrono",
- "clap",
- "crossterm",
- "dirs",
- "glob",
- "hex",
- "libc",
- "notify",
- "notify-debouncer-mini",
- "predicates",
- "ratatui",
- "regex",
- "serde",
- "serde_json",
- "sha2",
- "similar",
- "syntect",
- "tempfile",
- "toml",
- "tracing",
- "tracing-subscriber",
-]
 
 [[package]]
 name = "wait-timeout"

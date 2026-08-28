@@ -60,8 +60,10 @@ pub struct AlertEvaluator {
 
 impl AlertEvaluator {
     pub fn new(configs: Vec<AlertConfig>) -> Self {
-        let conditions: Vec<Option<AlertCondition>> =
-            configs.iter().map(|c| Self::parse_condition(&c.when)).collect();
+        let conditions: Vec<Option<AlertCondition>> = configs
+            .iter()
+            .map(|c| Self::parse_condition(&c.when))
+            .collect();
         let fired = vec![false; configs.len()];
         AlertEvaluator {
             configs,
@@ -260,7 +262,13 @@ mod tests {
 
     // ── evaluate ───────────────────────────────────────────────────────────
 
-    fn make_state(cost: f64, sentinel_fail: u32, stale: u32, velocity: f64, edits: u64) -> AlertState {
+    fn make_state(
+        cost: f64,
+        sentinel_fail: u32,
+        stale: u32,
+        velocity: f64,
+        edits: u64,
+    ) -> AlertState {
         AlertState {
             session_cost: cost,
             sentinel_failures: sentinel_fail,

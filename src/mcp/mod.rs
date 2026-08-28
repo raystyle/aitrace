@@ -16,9 +16,9 @@ use self::transport::{StdioReader, StdioWriter};
 use self::types::{INVALID_PARAMS, JsonRpcError, JsonRpcResponse, METHOD_NOT_FOUND};
 
 /// Run the MCP server main loop, reading JSON-RPC from stdin and writing
-/// responses to stdout. This is the entry point for `vibetracer mcp`.
+/// responses to stdout. This is the entry point for `aitrace mcp`.
 pub fn run_mcp_server(project_path: PathBuf) -> Result<()> {
-    let sessions_dir = project_path.join(".vibetracer").join("sessions");
+    let sessions_dir = project_path.join(".aitrace").join("sessions");
     let ctx = HandlerContext::new(sessions_dir.clone());
 
     let mut reader = StdioReader::new(Box::new(std::io::stdin()));
@@ -47,7 +47,7 @@ pub fn run_mcp_server(project_path: PathBuf) -> Result<()> {
                         "tools": {}
                     },
                     "serverInfo": {
-                        "name": "vibetracer-mcp",
+                        "name": "aitrace-mcp",
                         "version": env!("CARGO_PKG_VERSION")
                     }
                 }),

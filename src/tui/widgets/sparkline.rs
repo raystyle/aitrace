@@ -7,7 +7,9 @@ use ratatui::{
     widgets::Widget,
 };
 
-const BLOCKS: [char; 8] = ['\u{2581}', '\u{2582}', '\u{2583}', '\u{2584}', '\u{2585}', '\u{2586}', '\u{2587}', '\u{2588}'];
+const BLOCKS: [char; 8] = [
+    '\u{2581}', '\u{2582}', '\u{2583}', '\u{2584}', '\u{2585}', '\u{2586}', '\u{2587}', '\u{2588}',
+];
 
 /// Map a value within `[min, max]` to one of the 8 block characters.
 fn value_to_block(value: f64, min: f64, max: f64) -> char {

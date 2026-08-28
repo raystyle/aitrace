@@ -1,17 +1,19 @@
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
 use clap::Parser;
 use std::path::PathBuf;
 
-use vibetracer::config::Config;
-use vibetracer::import::claude::{import_session, list_sessions};
-use vibetracer::restore::RestoreEngine;
-use vibetracer::session::SessionManager;
-use vibetracer::snapshot::edit_log::EditLog;
-use vibetracer::snapshot::store::SnapshotStore;
-use vibetracer::tui::{App, PlaybackState, RunOptions};
+use aitrace::config::Config;
+use aitrace::import::claude::{import_session, list_sessions};
+use aitrace::restore::RestoreEngine;
+use aitrace::session::SessionManager;
+use aitrace::snapshot::edit_log::EditLog;
+use aitrace::snapshot::store::SnapshotStore;
+use aitrace::tui::{App, PlaybackState, RunOptions};
 
 #[derive(Parser)]
 #[command(
-    name = "vibetracer",
+    name = "aitrace",
     about = "Trace, replay, and rewind AI coding edits",
     version
 )]
@@ -19,7 +21,7 @@ struct Cli {
     /// Project directory to watch (defaults to current directory)
     path: Option<String>,
 
-    /// Write debug log to .vibetracer/debug.log
+    /// Write debug log to .aitrace/debug.log
     #[arg(long)]
     debug: bool,
 
@@ -62,8 +64,8 @@ enum Commands {
     Export {
         /// Output format
         #[arg(long, value_enum)]
-        format: vibetracer::export::ExportFormat,
-        /// Session ID (from `vibetracer sessions`)
+        format: aitrace::export::ExportFormat,
+        /// Session ID (from `aitrace sessions`)
         session_id: String,
         /// Output file path (default: stdout for agent-trace, git note on HEAD for git-notes)
         #[arg(long)]
@@ -75,6 +77,13 @@ enum Commands {
     Daemon {
         #[command(subcommand)]
         command: DaemonCommands,
+    },
+    /// Internal: forward a Claude Code hook payload to the daemon
+    #[command(hide = true)]
+    HookSend {
+        /// Project directory (defaults to cwd)
+        #[arg(long)]
+        project: Option<String>,
     },
 }
 
@@ -89,6 +98,9 @@ enum DaemonCommands {
 }
 
 fn main() -> anyhow::Result<()> {
+    #[cfg(windows)]
+    attach_parent_console();
+
     let cli = Cli::parse();
 
     // ── Daemon child mode ────────────────────────────────────────────────────
@@ -96,7 +108,7 @@ fn main() -> anyhow::Result<()> {
     if cli.daemon_child {
         let project_path = resolve_path(cli.path.as_deref())?;
         let config = load_config_or_default(&project_path);
-        return vibetracer::daemon::run_daemon(project_path, config);
+        return aitrace::daemon::run_daemon(project_path, config);
     }
 
     match cli.command {
@@ -105,7 +117,7 @@ fn main() -> anyhow::Result<()> {
             let project_path = resolve_path(cli.path.as_deref())?;
 
             match command {
-                DaemonCommands::Start => match vibetracer::daemon::start_daemon(&project_path) {
+                DaemonCommands::Start => match aitrace::daemon::start_daemon(&project_path) {
                     Ok((pid, session_id)) => {
                         println!("daemon started (PID {}, session {})", pid, session_id);
                     }
@@ -115,7 +127,7 @@ fn main() -> anyhow::Result<()> {
                     }
                 },
 
-                DaemonCommands::Stop => match vibetracer::daemon::stop_daemon(&project_path) {
+                DaemonCommands::Stop => match aitrace::daemon::stop_daemon(&project_path) {
                     Ok(()) => {
                         println!("daemon stopped");
                     }
@@ -126,7 +138,7 @@ fn main() -> anyhow::Result<()> {
                 },
 
                 DaemonCommands::Status => {
-                    match vibetracer::daemon::daemon_status(&project_path) {
+                    match aitrace::daemon::daemon_status(&project_path) {
                         Ok(status_json) => {
                             // Pretty-print the status.
                             if let Ok(value) =
@@ -173,22 +185,26 @@ fn main() -> anyhow::Result<()> {
         Some(Commands::Demo) => {
             let project_path = resolve_path(cli.path.as_deref())?;
             let config = load_config_or_default(&project_path);
-            vibetracer::demo::run_demo(project_path, config)?;
+            aitrace::demo::run_demo(project_path, config)?;
         }
 
         // ── Init: write auto-detected config ──────────────────────────────────
         Some(Commands::Init) => {
             let project_path = resolve_path(cli.path.as_deref())?;
-            let vt_dir = project_path.join(".vibetracer");
+            let vt_dir = project_path.join(".aitrace");
             std::fs::create_dir_all(&vt_dir)?;
+            match aitrace::install::install_project_bin(&project_path) {
+                Ok(bin) => println!("installed project bin {}", bin.display()),
+                Err(e) => eprintln!("hint: could not install project bin: {e}"),
+            }
             let config_path = vt_dir.join("config.toml");
 
             if config_path.exists() {
                 println!("config already exists at {}", config_path.display());
             } else {
-                let config = vibetracer::auto_detect::auto_detect_config(&project_path);
+                let config = aitrace::auto_detect::auto_detect_config(&project_path);
                 let toml_str = toml::to_string_pretty(&config)?;
-                let header = "# vibetracer configuration (auto-generated)\n# https://github.com/omeedcs/vibetracer\n# Generated by: vibetracer init\n\n";
+                let header = "# aitrace configuration (auto-generated)\n# https://github.com/raystyle/aitrace\n# Generated by: aitrace init\n\n";
                 std::fs::write(&config_path, format!("{header}{toml_str}"))?;
 
                 // Print what was detected
@@ -206,19 +222,27 @@ fn main() -> anyhow::Result<()> {
                 }
             }
 
-            // Suggest adding .vibetracer/ to .gitignore
+            // Suggest adding .aitrace/ to .gitignore
             let gitignore = project_path.join(".gitignore");
             if gitignore.exists() {
                 let content = std::fs::read_to_string(&gitignore).unwrap_or_default();
-                if !content.contains(".vibetracer") {
-                    println!("hint: add .vibetracer/ to your .gitignore");
+                if !content.contains(".aitrace") {
+                    println!("hint: add .aitrace/ to your .gitignore");
                 }
             } else {
-                println!("hint: add .vibetracer/ to your .gitignore");
+                println!("hint: add .aitrace/ to your .gitignore");
+            }
+
+            let claude_dir = project_path.join(".claude");
+            if claude_dir.is_dir() {
+                match aitrace::hook::registration::register_hook(&claude_dir, &project_path) {
+                    Ok(()) => {}
+                    Err(e) => eprintln!("hint: could not register Claude Code hook: {e}"),
+                }
             }
 
             // Detect agents
-            let agents = vibetracer::import::detect::detect_agents(&project_path);
+            let agents = aitrace::import::detect::detect_agents(&project_path);
             if agents.is_empty() {
                 println!("  no AI agents detected (start an agent and run init again)");
             } else {
@@ -248,7 +272,7 @@ fn main() -> anyhow::Result<()> {
         // ── Sessions: list past sessions ───────────────────────────────────────
         Some(Commands::Sessions) => {
             let project_path = resolve_path(cli.path.as_deref())?;
-            let sessions_dir = project_path.join(".vibetracer").join("sessions");
+            let sessions_dir = project_path.join(".aitrace").join("sessions");
             let manager = SessionManager::new(sessions_dir);
             let sessions = manager.list()?;
 
@@ -273,7 +297,7 @@ fn main() -> anyhow::Result<()> {
         // ── Replay: load session and replay in TUI ─────────────────────────────
         Some(Commands::Replay { session_id }) => {
             let project_path = resolve_path(cli.path.as_deref())?;
-            let sessions_dir = project_path.join(".vibetracer").join("sessions");
+            let sessions_dir = project_path.join(".aitrace").join("sessions");
             let manager = SessionManager::new(sessions_dir);
 
             // Load edit log for the session.
@@ -310,7 +334,7 @@ fn main() -> anyhow::Result<()> {
                 initial_app: Some(app),
                 ..Default::default()
             };
-            vibetracer::tui::run_tui_with_options(project_path, config, options)?;
+            aitrace::tui::run_tui_with_options(project_path, config, options)?;
         }
 
         // ── Import: import a past Claude Code session ─────────────────────────
@@ -378,7 +402,7 @@ fn main() -> anyhow::Result<()> {
                         initial_app: Some(app),
                         ..Default::default()
                     };
-                    vibetracer::tui::run_tui_with_options(project_path, config, options)?;
+                    aitrace::tui::run_tui_with_options(project_path, config, options)?;
                 }
             }
         }
@@ -386,14 +410,14 @@ fn main() -> anyhow::Result<()> {
         // ── Restore: headless file restore to a prior edit ────────────────────
         Some(Commands::Restore { file, edit_id }) => {
             let project_path = resolve_path(cli.path.as_deref())?;
-            let vt_dir = project_path.join(".vibetracer");
+            let vt_dir = project_path.join(".aitrace");
 
             // Find the active (or most recent) session directory.
             let session_dir = {
                 let pid_path = vt_dir.join("daemon.pid");
                 if pid_path.exists() {
                     // Daemon is (or was) running -- read session ID from PID file.
-                    match vibetracer::daemon::pid::read_pid_file(&pid_path) {
+                    match aitrace::daemon::pid::read_pid_file(&pid_path) {
                         Ok((_pid, session_id)) => {
                             let dir = vt_dir.join("sessions").join(&session_id);
                             if dir.exists() {
@@ -443,23 +467,23 @@ fn main() -> anyhow::Result<()> {
             output,
         }) => {
             let project_path = resolve_path(cli.path.as_deref())?;
-            let sessions_dir = project_path.join(".vibetracer").join("sessions");
+            let sessions_dir = project_path.join(".aitrace").join("sessions");
             let edit_log_path = sessions_dir.join(&session_id).join("edits.jsonl");
             if !edit_log_path.exists() {
                 anyhow::bail!("no edit log found for session {}", session_id);
             }
             let edits = EditLog::read_all(&edit_log_path)?;
             match format {
-                vibetracer::export::ExportFormat::AgentTrace => {
+                aitrace::export::ExportFormat::AgentTrace => {
                     let output_path = output.as_deref().map(std::path::Path::new);
-                    vibetracer::export::agent_trace::export_agent_trace_to_path(
+                    aitrace::export::agent_trace::export_agent_trace_to_path(
                         &edits,
                         &session_id,
                         output_path,
                     )?;
                 }
-                vibetracer::export::ExportFormat::GitNotes => {
-                    vibetracer::export::git_notes::export_git_notes(
+                aitrace::export::ExportFormat::GitNotes => {
+                    aitrace::export::git_notes::export_git_notes(
                         &edits,
                         &project_path,
                         output.as_deref(),
@@ -471,7 +495,12 @@ fn main() -> anyhow::Result<()> {
         // ── MCP: start stdio JSON-RPC server ─────────────────────────────────
         Some(Commands::Mcp) => {
             let project_path = resolve_path(cli.path.as_deref())?;
-            vibetracer::mcp::run_mcp_server(project_path)?;
+            aitrace::mcp::run_mcp_server(project_path)?;
+        }
+
+        Some(Commands::HookSend { project }) => {
+            let project_path = resolve_path(project.as_deref())?;
+            aitrace::hook::send::send_to_daemon(&project_path)?;
         }
 
         // ── Default: run live TUI ──────────────────────────────────────────────
@@ -485,7 +514,7 @@ fn main() -> anyhow::Result<()> {
             };
 
             if cli.debug {
-                let log_path = project_path.join(".vibetracer").join("debug.log");
+                let log_path = project_path.join(".aitrace").join("debug.log");
                 std::fs::create_dir_all(log_path.parent().unwrap())?;
                 let file = std::fs::File::create(&log_path)?;
                 tracing_subscriber::fmt()
@@ -497,7 +526,7 @@ fn main() -> anyhow::Result<()> {
 
             // Ensure terminal is restored even on panic.
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                vibetracer::tui::run_tui_with_options(project_path, config, options)
+                aitrace::tui::run_tui_with_options(project_path, config, options)
             }));
 
             match result {
@@ -515,13 +544,13 @@ fn main() -> anyhow::Result<()> {
                         crossterm::terminal::LeaveAlternateScreen,
                         crossterm::cursor::Show
                     );
-                    eprintln!("vibetracer crashed. Your terminal has been restored.");
+                    eprintln!("aitrace crashed. Your terminal has been restored.");
                     if let Some(msg) = panic_info.downcast_ref::<&str>() {
                         eprintln!("panic: {msg}");
                     } else if let Some(msg) = panic_info.downcast_ref::<String>() {
                         eprintln!("panic: {msg}");
                     }
-                    eprintln!("Please report this at https://github.com/omeedcs/vibetracer/issues");
+                    eprintln!("Please report this at https://github.com/raystyle/aitrace/issues");
                     std::process::exit(1);
                 }
             }
@@ -529,6 +558,46 @@ fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+/// Windows binaries default to the console subsystem, so hook/MCP/daemon
+/// spawns flash a black console window. This crate is built with
+/// `windows_subsystem = "windows"` instead; attach to the parent terminal
+/// only when this process has no stdout yet (interactive `aitrace` in a
+/// shell). Piped stdio (MCP, hook-send, captured CLI) is left alone.
+#[cfg(windows)]
+fn attach_parent_console() {
+    use std::fs::OpenOptions;
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
+    use windows_sys::Win32::System::Console::{
+        AttachConsole, GetStdHandle, SetStdHandle, STD_ERROR_HANDLE, STD_INPUT_HANDLE,
+        STD_OUTPUT_HANDLE,
+    };
+
+    unsafe {
+        let stdout = GetStdHandle(STD_OUTPUT_HANDLE);
+        if !stdout.is_null() && stdout != INVALID_HANDLE_VALUE {
+            return;
+        }
+        if AttachConsole(u32::MAX) == 0 {
+            return;
+        }
+    }
+
+    if let Ok(out) = OpenOptions::new().write(true).read(true).open("CONOUT$") {
+        unsafe {
+            SetStdHandle(STD_OUTPUT_HANDLE, out.as_raw_handle());
+            SetStdHandle(STD_ERROR_HANDLE, out.as_raw_handle());
+        }
+        std::mem::forget(out);
+    }
+    if let Ok(inp) = OpenOptions::new().read(true).write(true).open("CONIN$") {
+        unsafe {
+            SetStdHandle(STD_INPUT_HANDLE, inp.as_raw_handle());
+        }
+        std::mem::forget(inp);
+    }
 }
 
 /// Resolve the project path from an optional CLI argument (defaults to cwd).
@@ -539,9 +608,9 @@ fn resolve_path(arg: Option<&str>) -> anyhow::Result<PathBuf> {
     }
 }
 
-/// Load config from `.vibetracer/config.toml`, falling back to defaults.
+/// Load config from `.aitrace/config.toml`, falling back to defaults.
 fn load_config_or_default(project_path: &std::path::Path) -> Config {
-    let config_path = project_path.join(".vibetracer").join("config.toml");
+    let config_path = project_path.join(".aitrace").join("config.toml");
     Config::load(&config_path).unwrap_or_default()
 }
 

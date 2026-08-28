@@ -1,6 +1,7 @@
 use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::UnixStream;
 use std::path::Path;
+
+use crate::ipc;
 
 use anyhow::{Context, Result};
 
@@ -18,12 +19,11 @@ pub fn handle_subscribe(
         .and_then(|v| v.as_str())
         .context("missing session_id")?;
 
-    let sock_path = project_path.join(".vibetracer").join("daemon.sock");
-    if !sock_path.exists() {
-        anyhow::bail!("daemon is not active — start with `vibetracer daemon start`");
-    }
-
-    let mut stream = UnixStream::connect(&sock_path).context("connect to daemon socket")?;
+    let sock_path = project_path.join(".aitrace").join("daemon.sock");
+    let mut stream = match ipc::connect(&sock_path) {
+        Ok(s) => s,
+        Err(_) => anyhow::bail!("daemon is not active — start with `aitrace daemon start`"),
+    };
 
     // Send subscribe message
     let subscribe_msg = serde_json::json!({

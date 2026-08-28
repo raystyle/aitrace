@@ -1,4 +1,4 @@
-# Contributing to vibetracer
+# Contributing to aitrace
 
 Thanks for your interest in contributing. Here's how to get started.
 
@@ -6,8 +6,8 @@ Thanks for your interest in contributing. Here's how to get started.
 
 ```bash
 # Clone the repo
-git clone https://github.com/omeedcs/vibetracer.git
-cd vibetracer
+git clone https://github.com/raystyle/aitrace.git
+cd aitrace
 
 # Build
 cargo build
@@ -24,7 +24,7 @@ cargo run -- --embed /path/to/your/project
 
 **Requirements:**
 - Rust 1.85+ (edition 2024)
-- macOS or Linux
+- macOS, Linux, or Windows 10 1809+ / Windows Server 2019+
 
 ## How to Contribute
 
@@ -38,7 +38,7 @@ Open an issue with:
 
 ### Feature Requests
 
-Open an issue describing the feature and why it would be useful. Vibetracer is opinionated — not every feature fits, but good ideas are always welcome.
+Open an issue describing the feature and why it would be useful. Aitrace is opinionated — not every feature fits, but good ideas are always welcome.
 
 ### Pull Requests
 

@@ -1,5 +1,5 @@
+use aitrace::session::{Session, SessionManager};
 use tempfile::tempdir;
-use vibetracer::session::{Session, SessionManager};
 
 #[test]
 fn test_session_id_format() {

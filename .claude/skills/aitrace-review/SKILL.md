@@ -1,27 +1,17 @@
 ---
-name: vibetracer-review
-description: Self-correction workflow — scrub through vibetracer edit history to identify and fix regressions introduced during AI-assisted coding
+name: aitrace-review
+description: >
+  Self-correction workflow using aitrace edit history. Use when tests fail,
+  behavior regresses after AI-assisted edits, or the user asks to bisect,
+  rewind, or inspect what changed in this session.
+allowed-tools: Read Grep Glob Bash(cargo test *) Bash(cargo build *) mcp__aitrace__list_sessions mcp__aitrace__get_timeline mcp__aitrace__get_frame mcp__aitrace__diff_frames mcp__aitrace__search_edits mcp__aitrace__get_regression_window mcp__aitrace__subscribe_edits
 ---
 
-# vibetracer Self-Correction Review
+# aitrace Self-Correction Review
 
-Use this skill when tests fail or behavior regresses after a series of AI-assisted edits. It uses vibetracer's MCP tools to scrub through the edit timeline and surgically fix the regression at its source.
+Use this skill when tests fail or behavior regresses after a series of AI-assisted edits. Scrub the aitrace timeline via MCP and fix the regression at its source.
 
-## Prerequisites
-
-- vibetracer must be installed and recording (running as daemon or in TUI)
-- The vibetracer MCP server must be configured:
-
-```json
-{
-  "mcpServers": {
-    "vibetracer": {
-      "command": "vibetracer",
-      "args": ["mcp"]
-    }
-  }
-}
-```
+Project MCP is already in `.mcp.json` as server `aitrace` (`aitrace mcp`). Do not add a user-scoped MCP server. The daemon must be recording (`aitrace daemon status`).
 
 ## Workflow
 
@@ -39,7 +29,7 @@ Use this skill when tests fail or behavior regresses after a series of AI-assist
 
 ### Phase 3: Run Verification
 
-1. Run the project's test suite or build command
+1. Run `cargo test` at the repo root
 2. If everything passes, report success and stop
 3. If there are failures, note the specific errors and failing tests
 
@@ -63,13 +53,13 @@ Use this skill when tests fail or behavior regresses after a series of AI-assist
 
 ### Phase 6: Verify Fix
 
-1. Re-run the test suite to confirm the regression is fixed
-2. Run `get_timeline` again to confirm your fix was recorded
+1. Re-run `cargo test` to confirm the regression is fixed
+2. Run `get_timeline` again to confirm the fix was recorded
 3. Report what was found, what frame introduced it, and what was fixed
 
 ## Tips
 
-- Use `search_edits` with a regex pattern to quickly find frames that touched a specific function or variable
-- If multiple regressions exist, fix them one at a time, re-running tests after each
-- Use `subscribe_edits` if you want live notifications as new edits are recorded
-- The `file_filter` parameter on `get_timeline` is useful for narrowing to a specific file's history
+- `search_edits` with a regex finds frames that touched a function or variable
+- Fix multiple regressions one at a time; re-run tests after each
+- `subscribe_edits` for live notifications as new edits are recorded
+- `file_filter` on `get_timeline` narrows to one file

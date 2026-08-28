@@ -12,7 +12,7 @@ const SKIP_DIRS: &[&str] = &[
     "target",
     "__pycache__",
     ".venv",
-    ".vibetracer",
+    ".aitrace",
 ];
 
 /// Scan `project_root` and produce a populated `Config`.

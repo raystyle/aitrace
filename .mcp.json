@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "aitrace": {
+      "type": "stdio",
+      "command": "${CLAUDE_PROJECT_DIR:-.}/.aitrace/bin/aitrace.exe",
+      "args": ["mcp"]
+    }
+  }
+}

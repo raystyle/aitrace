@@ -83,9 +83,8 @@ pub fn format_blame(blame: &LineBlame, max_width: usize) -> String {
 
     if let Some(ref intent) = blame.operation_intent {
         // Truncate intent to fit
-        let max_intent = max_width.saturating_sub(
-            parts.iter().map(|p| p.len()).sum::<usize>() + parts.len() + 1,
-        );
+        let max_intent = max_width
+            .saturating_sub(parts.iter().map(|p| p.len()).sum::<usize>() + parts.len() + 1);
         if max_intent > 3 {
             let truncated: String = intent.chars().take(max_intent).collect();
             parts.push(truncated);
@@ -161,8 +160,18 @@ mod tests {
     #[test]
     fn blame_latest_edit_wins() {
         let edits = vec![
-            make_edit(1, "src/auth.rs", "@@ -1,1 +1,2 @@\n+first", Some("claude-1")),
-            make_edit(2, "src/auth.rs", "@@ -1,1 +1,2 @@\n+second", Some("claude-2")),
+            make_edit(
+                1,
+                "src/auth.rs",
+                "@@ -1,1 +1,2 @@\n+first",
+                Some("claude-1"),
+            ),
+            make_edit(
+                2,
+                "src/auth.rs",
+                "@@ -1,1 +1,2 @@\n+second",
+                Some("claude-2"),
+            ),
         ];
 
         let blame = compute_blame(&edits, "src/auth.rs", 1);

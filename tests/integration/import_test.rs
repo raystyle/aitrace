@@ -1,6 +1,6 @@
+use aitrace::import::claude::{import_session, list_sessions};
 use std::io::Write;
 use tempfile::tempdir;
-use vibetracer::import::claude::{import_session, list_sessions};
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -13,6 +13,11 @@ fn write_jsonl(dir: &std::path::Path, name: &str, lines: &[&str]) -> std::path::
     path
 }
 
+/// JSON-quoted path so Windows backslashes stay valid in JSONL fixtures.
+fn json_path(path: &std::path::Path) -> String {
+    serde_json::to_string(&path.to_string_lossy().as_ref()).unwrap()
+}
+
 // ─── tests ────────────────────────────────────────────────────────────────────
 
 #[test]
@@ -22,15 +27,15 @@ fn test_parse_edit_tool_use() {
     std::fs::create_dir_all(&project_root).unwrap();
 
     let file_path = project_root.join("src").join("main.py");
-    let file_path_str = file_path.to_string_lossy();
+    let file_path_str = json_path(&file_path);
 
     let assistant_line = format!(
-        r#"{{"type":"assistant","timestamp":"2026-03-20T21:51:29.334Z","message":{{"content":[{{"type":"tool_use","name":"Edit","input":{{"file_path":"{file_path}","old_string":"original code","new_string":"modified code"}}}}]}}}}"#,
+        r#"{{"type":"assistant","timestamp":"2026-03-20T21:51:29.334Z","message":{{"content":[{{"type":"tool_use","name":"Edit","input":{{"file_path":{file_path},"old_string":"original code","new_string":"modified code"}}}}]}}}}"#,
         file_path = file_path_str
     );
 
     let result_line = format!(
-        r#"{{"type":"user","timestamp":"2026-03-20T21:51:30.000Z","toolUseResult":{{"type":"modify","filePath":"{file_path}","content":"modified code","originalFile":"original code"}}}}"#,
+        r#"{{"type":"user","timestamp":"2026-03-20T21:51:30.000Z","toolUseResult":{{"type":"modify","filePath":{file_path},"content":"modified code","originalFile":"original code"}}}}"#,
         file_path = file_path_str
     );
 
@@ -66,15 +71,15 @@ fn test_parse_write_tool_use() {
     std::fs::create_dir_all(&project_root).unwrap();
 
     let file_path = project_root.join("new_file.rs");
-    let file_path_str = file_path.to_string_lossy();
+    let file_path_str = json_path(&file_path);
 
     let assistant_line = format!(
-        r#"{{"type":"assistant","timestamp":"2026-03-20T22:00:00.000Z","message":{{"content":[{{"type":"tool_use","name":"Write","input":{{"file_path":"{file_path}","content":"fn main() {{}}\n"}}}}]}}}}"#,
+        r#"{{"type":"assistant","timestamp":"2026-03-20T22:00:00.000Z","message":{{"content":[{{"type":"tool_use","name":"Write","input":{{"file_path":{file_path},"content":"fn main() {{}}\n"}}}}]}}}}"#,
         file_path = file_path_str
     );
 
     let result_line = format!(
-        r#"{{"type":"user","timestamp":"2026-03-20T22:00:01.000Z","toolUseResult":{{"type":"create","filePath":"{file_path}","content":"fn main() {{}}\n","originalFile":null}}}}"#,
+        r#"{{"type":"user","timestamp":"2026-03-20T22:00:01.000Z","toolUseResult":{{"type":"create","filePath":{file_path},"content":"fn main() {{}}\n","originalFile":null}}}}"#,
         file_path = file_path_str
     );
 
@@ -128,16 +133,16 @@ fn test_import_multiple_edits_sorted_by_timestamp() {
 
     let file_a = project_root.join("a.py");
     let file_b = project_root.join("b.py");
-    let file_a_str = file_a.to_string_lossy();
-    let file_b_str = file_b.to_string_lossy();
+    let file_a_str = json_path(&file_a);
+    let file_b_str = json_path(&file_b);
 
     // Second edit has an earlier timestamp than the first line
     let line1 = format!(
-        r#"{{"type":"assistant","timestamp":"2026-03-20T22:00:00.000Z","message":{{"content":[{{"type":"tool_use","name":"Edit","input":{{"file_path":"{f}","old_string":"x","new_string":"y"}}}}]}}}}"#,
+        r#"{{"type":"assistant","timestamp":"2026-03-20T22:00:00.000Z","message":{{"content":[{{"type":"tool_use","name":"Edit","input":{{"file_path":{f},"old_string":"x","new_string":"y"}}}}]}}}}"#,
         f = file_b_str
     );
     let line2 = format!(
-        r#"{{"type":"assistant","timestamp":"2026-03-20T21:00:00.000Z","message":{{"content":[{{"type":"tool_use","name":"Edit","input":{{"file_path":"{f}","old_string":"a","new_string":"b"}}}}]}}}}"#,
+        r#"{{"type":"assistant","timestamp":"2026-03-20T21:00:00.000Z","message":{{"content":[{{"type":"tool_use","name":"Edit","input":{{"file_path":{f},"old_string":"a","new_string":"b"}}}}]}}}}"#,
         f = file_a_str
     );
 

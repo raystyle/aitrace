@@ -2,7 +2,7 @@ use serde_json::json;
 
 use super::types::McpToolDef;
 
-/// Returns definitions for all 7 MCP tools exposed by vibetracer.
+/// Returns definitions for all 7 MCP tools exposed by aitrace.
 ///
 /// Each tool has a name, human-readable description, and a JSON Schema
 /// (`input_schema`) that describes the accepted parameters. These are
@@ -12,7 +12,7 @@ pub fn all_tool_definitions() -> Vec<McpToolDef> {
         // 1. list_sessions
         McpToolDef {
             name: "list_sessions".to_string(),
-            description: "List recorded vibetracer sessions, most recent first.".to_string(),
+            description: "List recorded aitrace sessions, most recent first.".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {

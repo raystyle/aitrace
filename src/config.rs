@@ -26,7 +26,7 @@ impl Default for WatchConfig {
                 "node_modules".to_string(),
                 "target".to_string(),
                 "__pycache__".to_string(),
-                ".vibetracer".to_string(),
+                ".aitrace".to_string(),
             ],
             auto_checkpoint_every: 25,
         }
@@ -109,7 +109,7 @@ impl Default for ThemeConfig {
     }
 }
 
-/// Top-level vibetracer configuration, loaded from `.vibetracer/config.toml`.
+/// Top-level aitrace configuration, loaded from `.aitrace/config.toml`.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct Config {

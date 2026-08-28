@@ -1,27 +1,29 @@
-# vibetracer
+# aitrace
 
 Real-time AI coding session observability. Trace, replay, and understand what your AI assistant is actually doing.
 
 ```
-cargo install vibetracer
+cargo run --release
 ```
 
 ---
 
-## What is vibetracer?
+## What is aitrace?
 
-vibetracer is a terminal-based observability cockpit for AI coding sessions. It captures every file change, parses Claude Code's conversation logs, and presents everything in a dense htop-style TUI. You can scrub through time, inspect individual edits, see what Claude was thinking, track token costs, and surgically restore files. It works with Claude Code, Cursor, and Codex CLI out of the box.
+aitrace is a terminal-based observability cockpit for AI coding sessions. It captures every file change, parses Claude Code's conversation logs, and presents everything in a dense htop-style TUI. You can scrub through time, inspect individual edits, see what Claude was thinking, track token costs, and surgically restore files. It works with Claude Code, Cursor, and Codex CLI out of the box.
 
 ## Quick Start
 
 ```bash
-cargo install vibetracer
-cd your-project
-vibetracer          # starts watching + opens cockpit
-vibetracer demo     # try the interactive demo
+git clone https://github.com/raystyle/aitrace
+cd aitrace
+cargo build --release
+
+./target/release/aitrace demo                    # interactive demo
+./target/release/aitrace /path/to/your-project   # watch a project
 ```
 
-vibetracer auto-starts a background daemon, begins recording, and opens the TUI. Close the TUI and the daemon keeps recording. Reconnect later with `vibetracer` and pick up where you left off.
+aitrace auto-starts a background daemon, begins recording, and opens the TUI. Close the TUI and the daemon keeps recording. Reconnect later with `aitrace` and pick up where you left off.
 
 ---
 
@@ -54,7 +56,16 @@ The mode indicator displays in the status bar. A command palette (`:` or `Ctrl+P
 
 ### Claude Code Integration
 
-When Claude Code's `.claude/` directory is detected, vibetracer auto-registers a `PostToolUse` hook and begins parsing conversation logs in a background thread.
+This repository ships project-scoped Claude Code config (hooks, MCP, skill). It only loads when you start Claude Code in this folder.
+
+- `.claude/settings.json` — `PostToolUse` hook on `Write|Edit` runs `<project>/.aitrace/bin/aitrace.exe hook-send`
+- `.mcp.json` — stdio MCP server `aitrace` (`<project>/.aitrace/bin/aitrace.exe mcp`)
+- `.claude/skills/aitrace-review/SKILL.md` — `/aitrace-review` self-correction workflow
+- `CLAUDE.md` — standing instructions for Claude Code
+
+On first launch, accept the workspace trust dialog and approve the `aitrace` MCP server (`/mcp`). Keep the recorder running with `aitrace daemon start`.
+
+When Claude Code's `.claude/` directory is detected in other projects, the daemon registers a local `PostToolUse` hook in `.claude/settings.local.json` unless a committed settings file already defines one. Conversation logs under `~/.claude/projects/` are parsed in a background thread.
 
 - User prompts and tool call trees parsed in real-time
 - Token usage per turn with cost estimates (input, output, cache read)
@@ -120,13 +131,13 @@ Scrubbing is visual. Restoring writes to disk. These are separate actions.
 - **Undo restore** (`u`) -- every restore is logged, reverse the last one
 - **Content-addressed snapshot store** -- every file version stored by SHA-256 hash
 - **Checkpoints** (`c`) -- manual full-project snapshots, plus auto-checkpoints every N edits (configurable)
-- **CLI restore** -- headless restore without opening the TUI: `vibetracer restore <file> --edit-id <N>`
+- **CLI restore** -- headless restore without opening the TUI: `aitrace restore <file> --edit-id <N>`
 
 ### Analysis Engines
 
 **Blast Radius** (`b`) -- when a file is edited, see which dependent files may need updating. Catches partial refactors where the AI updates 3 of 5 coupled files and moves on. Tracks stale, updated, and untouched dependents.
 
-**Sentinels** -- cross-file invariant rules. Define assertions like "feature count in config must match model input size." vibetracer alerts instantly when an edit breaks the invariant.
+**Sentinels** -- cross-file invariant rules. Define assertions like "feature count in config must match model input size." aitrace alerts instantly when an edit breaks the invariant.
 
 **Watchdog** (`w`) -- register constants that should never change (physics values, API endpoints, config thresholds). Get alerted the moment the AI modifies a watched value. Severity levels: critical, warning, info.
 
@@ -156,20 +167,20 @@ Alert actions: `toast` (status bar), `flash` (screen flash), `bell` (terminal be
 **Agent Trace JSON** -- vendor-neutral session export compatible with Cursor and the git-ai ecosystem:
 
 ```bash
-vibetracer export --format agent-trace <session-id>
-vibetracer export --format agent-trace <session-id> --output trace.json
+aitrace export --format agent-trace <session-id>
+aitrace export --format agent-trace <session-id> --output trace.json
 ```
 
 **git-ai compatible git notes** -- attach authorship logs directly to commits:
 
 ```bash
-vibetracer export --format git-notes <session-id>
+aitrace export --format git-notes <session-id>
 ```
 
 **MCP Server** -- 7 tools exposed via Model Context Protocol for AI self-correction:
 
 ```bash
-vibetracer mcp   # start stdio JSON-RPC server
+aitrace mcp   # start stdio JSON-RPC server
 ```
 
 | MCP Tool | Description |
@@ -184,20 +195,23 @@ vibetracer mcp   # start stdio JSON-RPC server
 
 All list-returning tools support `offset`/`limit` pagination and stream JSONL lazily.
 
-Add to your MCP client configuration:
+This repo's Claude Code project config is `.mcp.json` at the root (not under `.claude/`). Other MCP clients can use the same block:
 
 ```json
 {
   "mcpServers": {
-    "vibetracer": {
-      "command": "vibetracer",
+    "aitrace": {
+      "type": "stdio",
+      "command": "${CLAUDE_PROJECT_DIR:-.}/.aitrace/bin/aitrace.exe",
       "args": ["mcp"]
     }
   }
 }
 ```
 
-**Claude Code Hook** -- auto-registers a `PostToolUse` hook when `.claude/` is detected, capturing tool metadata and intent context on every edit.
+Do not add this as a user-scoped server in `~/.claude.json` if you only want it in this project.
+
+**Claude Code Hook** -- project `.claude/settings.json` captures `Write`/`Edit` tool metadata via `aitrace hook-send`. Other projects get a gitignored local hook when the daemon sees `.claude/`.
 
 ---
 
@@ -287,10 +301,10 @@ Fuzzy search across all available actions. Recently-used entries float to the to
 
 ## Configuration
 
-Run `vibetracer init` to auto-detect constants, schemas, and dependencies in your project. Configuration lives in `.vibetracer/config.toml`.
+Run `aitrace init` to auto-detect constants, schemas, and dependencies in your project. Configuration lives in `.aitrace/config.toml`.
 
 ```toml
-# .vibetracer/config.toml
+# .aitrace/config.toml
 
 [theme]
 preset = "tokyo-night"
@@ -298,7 +312,7 @@ preset = "tokyo-night"
 [watch]
 debounce_ms = 100
 auto_checkpoint_every = 25
-ignore = [".git", "node_modules", "target", "__pycache__", ".vibetracer"]
+ignore = [".git", "node_modules", "target", "__pycache__", ".aitrace"]
 
 # Watchdog: alert when registered constants change
 [[watchdog.constants]]
@@ -360,19 +374,19 @@ message = "Unusually high edit rate"
 ## CLI Reference
 
 ```
-vibetracer [path]                          Watch directory (default: cwd)
-vibetracer demo                            Interactive feature demo
-vibetracer replay <session>                Replay a past session
-vibetracer sessions                        List past sessions
-vibetracer import [session]                Import Claude Code session
-vibetracer restore <file> --edit-id <N>    Restore a file to a specific edit
-vibetracer export --format agent-trace <session>   Export as Agent Trace JSON
-vibetracer export --format git-notes <session>     Export as git-ai git notes
-vibetracer mcp                             Start MCP server (stdio JSON-RPC)
-vibetracer daemon start|stop|status        Manage background daemon
-vibetracer init                            Create config with auto-detection
-vibetracer --no-daemon [path]              Single-process mode (no daemon)
-vibetracer --debug [path]                  Write debug log for troubleshooting
+aitrace [path]                          Watch directory (default: cwd)
+aitrace demo                            Interactive feature demo
+aitrace replay <session>                Replay a past session
+aitrace sessions                        List past sessions
+aitrace import [session]                Import Claude Code session
+aitrace restore <file> --edit-id <N>    Restore a file to a specific edit
+aitrace export --format agent-trace <session>   Export as Agent Trace JSON
+aitrace export --format git-notes <session>     Export as git-ai git notes
+aitrace mcp                             Start MCP server (stdio JSON-RPC)
+aitrace daemon start|stop|status        Manage background daemon
+aitrace init                            Create config with auto-detection
+aitrace --no-daemon [path]              Single-process mode (no daemon)
+aitrace --debug [path]                  Write debug log for troubleshooting
 ```
 
 ---
@@ -397,7 +411,7 @@ preset = "tokyo-night"
 ## Architecture
 
 ```
-vibetracer
+aitrace
   daemon/           Background recorder (filesystem watcher + snapshot store + edit log)
   recorder/         Shared recording logic (used by daemon and --no-daemon mode)
   snapshot/         Content-addressed file storage (SHA-256) + append-only JSONL edit journal
@@ -418,28 +432,25 @@ vibetracer
   theme/            19 color themes with runtime switching
 ```
 
-The daemon records file changes to an append-only JSONL edit journal in `.vibetracer/`. Every file version is stored in a content-addressed snapshot store keyed by SHA-256 hash. The TUI tails the edit log in real-time and renders the cockpit. Claude Code's conversation logs are parsed in a background thread. Analysis engines evaluate on each incoming edit and surface alerts. The layout uses a dynamic panel registry with focus cycling.
+The daemon records file changes to an append-only JSONL edit journal in `.aitrace/`. Every file version is stored in a content-addressed snapshot store keyed by SHA-256 hash. The TUI tails the edit log in real-time and renders the cockpit. Claude Code's conversation logs are parsed in a background thread. Analysis engines evaluate on each incoming edit and surface alerts. The layout uses a dynamic panel registry with focus cycling.
 
-Data is stored in `.vibetracer/` within your project directory. Add it to `.gitignore`.
+Data is stored in `.aitrace/` within your project directory. Add it to `.gitignore`.
 
 ---
 
 ## Installation
 
+Build from source. There is no crates.io crate and no Homebrew tap.
+
 ```bash
-# From crates.io
-cargo install vibetracer
-
-# From source
-git clone https://github.com/omeedcs/vibetracer
-cd vibetracer
-cargo install --path .
-
-# Homebrew (macOS)
-brew install omeedcs/tap/vibetracer
+git clone https://github.com/raystyle/aitrace
+cd aitrace
+cargo build --release
 ```
 
-**Requirements:** Rust 1.70+ (for installation from source)
+The binary is `target/release/aitrace`.
+
+**Requirements:** Rust 1.85+ (edition 2024). macOS, Linux, or Windows 10 1809+ (AF_UNIX).
 
 ---
 

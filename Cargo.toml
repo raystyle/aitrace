@@ -1,12 +1,11 @@
 [package]
-name = "vibetracer"
+name = "aitrace"
 version = "0.6.2"
 edition = "2024"
 description = "Real-time tracing, replaying, and rewinding of AI coding assistant edits. MCP server for AI self-correction. Cross-agent support (Claude Code, Cursor, Codex). Export to Agent Trace JSON and git-ai git notes."
-keywords = ["tracing", "ai", "mcp", "debugging", "tui"]
-categories = ["command-line-utilities", "development-tools::debugging"]
 license = "MIT"
-repository = "https://github.com/omeedcs/vibetracer"
+repository = "https://github.com/raystyle/aitrace"
+publish = false
 
 [dependencies]
 ratatui = "0.29"
@@ -28,7 +27,13 @@ tracing-subscriber = "0.3"
 anyhow = "1"
 dirs = "6"
 syntect = { version = "5", default-features = false, features = ["default-syntaxes", "default-themes", "regex-onig"] }
+
+[target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+uds_windows = "1.2"
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Console", "Win32_System_Threading"] }
 
 [dev-dependencies]
 tempfile = "3"

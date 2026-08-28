@@ -57,7 +57,7 @@ pub fn run_tui_with_options(
     let is_replay = options.initial_app.is_some();
 
     // ── daemon / session setup ────────────────────────────────────────────────
-    let vt_dir = project_path.join(".vibetracer");
+    let vt_dir = project_path.join(".aitrace");
     let pid_path = vt_dir.join("daemon.pid");
     let sock_path = vt_dir.join("daemon.sock");
 
@@ -267,7 +267,7 @@ fn write_session_summary(session: &crate::session::Session, app: &App) -> Result
     }
 
     let mut summary = String::new();
-    summary.push_str("# vibetracer session summary\n\n");
+    summary.push_str("# aitrace session summary\n\n");
     summary.push_str(&format!("**Session:** {}\n", session.id));
     summary.push_str(&format!("**Duration:** {}m {:02}s\n", minutes, seconds));
     summary.push_str(&format!("**Edits:** {}\n", app.edits.len()));

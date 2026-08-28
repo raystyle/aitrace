@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": ["aitrace"],
+  "permissions": {
+    "allow": [
+      "Bash(cargo test *)",
+      "Bash(cargo build *)",
+      "Bash(cargo clippy *)",
+      "Bash(cargo fmt *)",
+      "Bash(aitrace *)",
+      "mcp__aitrace__list_sessions",
+      "mcp__aitrace__get_timeline",
+      "mcp__aitrace__get_frame",
+      "mcp__aitrace__diff_frames",
+      "mcp__aitrace__search_edits",
+      "mcp__aitrace__get_regression_window",
+      "mcp__aitrace__subscribe_edits"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/.aitrace/bin/aitrace.exe",
+            "args": ["hook-send", "--project", "${CLAUDE_PROJECT_DIR}"],
+            "description": "aitrace edit tracking",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

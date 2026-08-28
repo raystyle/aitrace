@@ -5,7 +5,7 @@ use std::process::{Child, Command, Stdio};
 use serde_json::{Value, json};
 
 fn start_mcp_server(project_dir: &Path) -> Child {
-    let bin = env!("CARGO_BIN_EXE_vibetracer");
+    let bin = env!("CARGO_BIN_EXE_aitrace");
     Command::new(bin)
         .arg(project_dir.to_str().unwrap())
         .arg("mcp")
@@ -13,7 +13,7 @@ fn start_mcp_server(project_dir: &Path) -> Child {
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
-        .expect("start vibetracer mcp")
+        .expect("start aitrace mcp")
 }
 
 fn send_request(
@@ -40,7 +40,7 @@ fn send_notification(stdin: &mut impl Write, method: &str) {
 #[test]
 fn test_mcp_initialize_and_list_tools() {
     let dir = tempfile::tempdir().unwrap();
-    let sessions_dir = dir.path().join(".vibetracer").join("sessions");
+    let sessions_dir = dir.path().join(".aitrace").join("sessions");
     std::fs::create_dir_all(&sessions_dir).unwrap();
 
     let mut child = start_mcp_server(dir.path());
@@ -54,8 +54,8 @@ fn test_mcp_initialize_and_list_tools() {
     assert_eq!(resp["result"]["protocolVersion"], "2024-11-05");
     let server_name = resp["result"]["serverInfo"]["name"].as_str().unwrap();
     assert!(
-        server_name.contains("vibetracer"),
-        "serverInfo.name should contain 'vibetracer', got: {}",
+        server_name.contains("aitrace"),
+        "serverInfo.name should contain 'aitrace', got: {}",
         server_name
     );
 
@@ -77,7 +77,7 @@ fn test_mcp_initialize_and_list_tools() {
 #[test]
 fn test_mcp_tools_call_list_sessions() {
     let dir = tempfile::tempdir().unwrap();
-    let sessions_dir = dir.path().join(".vibetracer").join("sessions");
+    let sessions_dir = dir.path().join(".aitrace").join("sessions");
     let session_id = "20260325-120000-abcd";
     let session_dir = sessions_dir.join(session_id);
     std::fs::create_dir_all(&session_dir).unwrap();

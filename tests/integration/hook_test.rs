@@ -1,5 +1,5 @@
+use aitrace::hook::registration::{register_hook, unregister_hook};
 use tempfile::tempdir;
-use vibetracer::hook::registration::{register_hook, unregister_hook};
 
 #[test]
 fn test_register_hook_creates_settings() {
@@ -16,19 +16,16 @@ fn test_register_hook_creates_settings() {
     );
 
     let contents = std::fs::read_to_string(&settings_path).unwrap();
+    let settings: serde_json::Value = serde_json::from_str(&contents).unwrap();
+    let group = &settings["hooks"]["PostToolUse"][0];
+    assert_eq!(group["matcher"], "Write|Edit");
+    let hook = &group["hooks"][0];
+    assert_eq!(hook["args"][0], "hook-send");
+    assert_eq!(hook["args"][2], project_path.to_string_lossy().as_ref());
+    let command = hook["command"].as_str().unwrap();
     assert!(
-        contents.contains("PostToolUse"),
-        "settings should contain PostToolUse matcher"
-    );
-    // The socket path is derived from project_path/.vibetracer/daemon.sock.
-    let expected_sock = project_path
-        .join(".vibetracer")
-        .join("daemon.sock")
-        .to_string_lossy()
-        .into_owned();
-    assert!(
-        contents.contains(&expected_sock),
-        "settings should contain the derived daemon socket path"
+        command.contains(".aitrace") && command.contains("aitrace.exe"),
+        "hook command should be the project-local bin, got {command}"
     );
 }
 
@@ -46,7 +43,7 @@ fn test_unregister_hook_removes_entry() {
 
     let contents = std::fs::read_to_string(&settings_path).unwrap();
     assert!(
-        !contents.contains("vibetracer"),
-        "settings should not contain 'vibetracer' after unregistration"
+        !contents.contains("aitrace"),
+        "settings should not contain 'aitrace' after unregistration"
     );
 }

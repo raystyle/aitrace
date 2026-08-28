@@ -123,17 +123,14 @@ impl Widget for ConversationPanel<'_> {
 
             // ── USER line ──────────────────────────────────────────────
             {
-                let prompt_budget = max_width
-                    .saturating_sub(ts.len() + 2 /* spaces */ + 6 /* " USER " */);
+                let prompt_budget =
+                    max_width.saturating_sub(ts.len() + 2 /* spaces */ + 6 /* " USER " */);
                 let prompt = truncate(&turn.user_prompt, prompt_budget);
 
                 let spans = vec![
                     Span::styled(ts.clone(), Style::default().fg(t.fg_dim)),
                     Span::styled("  USER   ", Style::default().fg(t.fg)),
-                    Span::styled(
-                        format!("\"{}\"", prompt),
-                        Style::default().fg(t.fg_muted),
-                    ),
+                    Span::styled(format!("\"{}\"", prompt), Style::default().fg(t.fg_muted)),
                 ];
                 all_lines.push((Line::from(spans), Some(turn_idx)));
             }
@@ -158,7 +155,11 @@ impl Widget for ConversationPanel<'_> {
             let tool_count = turn.tool_calls.len();
             for (tc_idx, tc) in turn.tool_calls.iter().enumerate() {
                 let is_last = tc_idx + 1 == tool_count;
-                let branch = if is_last { "\u{2514}\u{2500} " } else { "\u{251C}\u{2500} " };
+                let branch = if is_last {
+                    "\u{2514}\u{2500} "
+                } else {
+                    "\u{251C}\u{2500} "
+                };
 
                 let indent = "  ";
                 let line = render_tool_call(tc, branch, indent, t, max_width, is_selected);
@@ -167,18 +168,16 @@ impl Widget for ConversationPanel<'_> {
 
             // ── CLAUDE [complete] "response..." ────────────────────────
             {
-                let response_budget = max_width
-                    .saturating_sub(ts.len() + 2 + 9 /* " CLAUDE " */ + 12 /* "[complete] " */);
+                let response_budget = max_width.saturating_sub(
+                    ts.len() + 2 + 9 /* " CLAUDE " */ + 12, /* "[complete] " */
+                );
                 let response = truncate(&turn.assistant_text, response_budget);
 
                 let spans = vec![
                     Span::styled(ts, Style::default().fg(t.fg_dim)),
                     Span::styled("  CLAUDE ", Style::default().fg(t.accent_blue)),
                     Span::styled("[complete]  ", Style::default().fg(t.fg_dim)),
-                    Span::styled(
-                        format!("\"{}\"", response),
-                        Style::default().fg(t.fg_muted),
-                    ),
+                    Span::styled(format!("\"{}\"", response), Style::default().fg(t.fg_muted)),
                 ];
                 all_lines.push((Line::from(spans), Some(turn_idx)));
             }

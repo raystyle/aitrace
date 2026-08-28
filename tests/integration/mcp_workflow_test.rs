@@ -4,15 +4,15 @@ use std::process::{Child, Command, Stdio};
 
 use serde_json::{Value, json};
 
-use vibetracer::event::{EditEvent, EditKind};
-use vibetracer::session::{SessionMeta, SessionMode};
-use vibetracer::snapshot::edit_log::EditLog;
-use vibetracer::snapshot::store::SnapshotStore;
+use aitrace::event::{EditEvent, EditKind};
+use aitrace::session::{SessionMeta, SessionMode};
+use aitrace::snapshot::edit_log::EditLog;
+use aitrace::snapshot::store::SnapshotStore;
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 fn start_mcp(project_dir: &Path) -> Child {
-    let bin = env!("CARGO_BIN_EXE_vibetracer");
+    let bin = env!("CARGO_BIN_EXE_aitrace");
     Command::new(bin)
         .arg(project_dir.to_str().unwrap())
         .arg("mcp")
@@ -20,7 +20,7 @@ fn start_mcp(project_dir: &Path) -> Child {
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
-        .expect("start vibetracer mcp")
+        .expect("start aitrace mcp")
 }
 
 fn send(
@@ -82,7 +82,7 @@ fn create_realistic_session(sessions_dir: &Path) {
             .to_string(),
         started_at: 1_700_000_000,
         mode: SessionMode::Enriched,
-        agents: vec![vibetracer::event::AgentInfo {
+        agents: vec![aitrace::event::AgentInfo {
             agent_id: "a1".to_string(),
             agent_label: "claude-1".to_string(),
             tool_type: "claude-code".to_string(),
@@ -175,7 +175,7 @@ fn create_realistic_session(sessions_dir: &Path) {
 fn test_full_self_correction_workflow() {
     // 1. Set up temp dir with realistic session
     let dir = tempfile::tempdir().unwrap();
-    let sessions_dir = dir.path().join(".vibetracer").join("sessions");
+    let sessions_dir = dir.path().join(".aitrace").join("sessions");
     std::fs::create_dir_all(&sessions_dir).unwrap();
     create_realistic_session(&sessions_dir);
 

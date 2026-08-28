@@ -28,7 +28,7 @@ pub fn detect_agents(project_path: &Path) -> Vec<DetectedAgent> {
 
     // Check for Claude Code session files
     if let Some(home) = dirs::home_dir() {
-        let converted = project_path.to_string_lossy().replace('/', "-");
+        let converted = project_path.to_string_lossy().replace(['/', '\\'], "-");
         let claude_sessions_dir = home.join(".claude").join("projects").join(&converted);
         if claude_sessions_dir.is_dir() {
             let has_jsonl = std::fs::read_dir(&claude_sessions_dir)

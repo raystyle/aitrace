@@ -1,7 +1,4 @@
-use vibetracer::config::{
-    BlastRadiusConfig, Config, ManualDependency, PatternSpec, SentinelRule, WatchConfig,
-    WatchdogConfig, WatchdogConstant,
-};
+use aitrace::config::Config;
 
 #[test]
 fn test_default_config() {
@@ -11,13 +8,7 @@ fn test_default_config() {
     assert_eq!(config.watch.debounce_ms, 100);
     assert_eq!(
         config.watch.ignore,
-        vec![
-            ".git",
-            "node_modules",
-            "target",
-            "__pycache__",
-            ".vibetracer"
-        ]
+        vec![".git", "node_modules", "target", "__pycache__", ".aitrace"]
     );
     assert_eq!(config.watch.auto_checkpoint_every, 25);
 

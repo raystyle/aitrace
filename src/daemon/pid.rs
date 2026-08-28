@@ -33,17 +33,70 @@ pub fn read_pid_file(path: &Path) -> Result<(i32, String)> {
 }
 
 /// Check whether a process with the given PID is still alive.
-///
-/// Uses `kill(pid, 0)` which sends no signal but checks if the process exists.
-/// Returns `true` if the process exists (even if owned by another user, which
-/// gives EPERM rather than ESRCH).
 pub fn is_process_alive(pid: i32) -> bool {
+    if pid <= 0 {
+        return false;
+    }
+    is_process_alive_impl(pid)
+}
+
+#[cfg(unix)]
+fn is_process_alive_impl(pid: i32) -> bool {
+    // `kill(pid, 0)` sends no signal; EPERM means the process exists.
     let ret = unsafe { libc::kill(pid, 0) };
     if ret == 0 {
         return true;
     }
-    // EPERM means the process exists but we lack permission to signal it.
     std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+}
+
+#[cfg(windows)]
+fn is_process_alive_impl(pid: i32) -> bool {
+    use windows_sys::Win32::Foundation::{CloseHandle, STILL_ACTIVE};
+    use windows_sys::Win32::System::Threading::{
+        GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+
+    unsafe {
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid as u32);
+        if handle.is_null() {
+            return false;
+        }
+        let mut exit_code: u32 = 0;
+        let ok = GetExitCodeProcess(handle, &mut exit_code);
+        CloseHandle(handle);
+        ok != 0 && exit_code == STILL_ACTIVE as u32
+    }
+}
+
+/// Best-effort stop of a process that did not exit after a graceful socket stop.
+pub fn terminate(pid: i32) {
+    if pid <= 0 {
+        return;
+    }
+    terminate_impl(pid);
+}
+
+#[cfg(unix)]
+fn terminate_impl(pid: i32) {
+    unsafe {
+        libc::kill(pid, libc::SIGTERM);
+    }
+}
+
+#[cfg(windows)]
+fn terminate_impl(pid: i32) {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_TERMINATE, TerminateProcess};
+
+    unsafe {
+        let handle = OpenProcess(PROCESS_TERMINATE, 0, pid as u32);
+        if handle.is_null() {
+            return;
+        }
+        let _ = TerminateProcess(handle, 1);
+        CloseHandle(handle);
+    }
 }
 
 /// Clean up stale daemon artifacts (PID file and socket) left by a crashed daemon.
@@ -73,10 +126,7 @@ pub fn cleanup_stale(pid_path: &Path, sock_path: &Path) -> Result<()> {
             .with_context(|| format!("remove stale PID file {:?}", pid_path))?;
     }
 
-    if sock_path.exists() {
-        std::fs::remove_file(sock_path)
-            .with_context(|| format!("remove stale socket file {:?}", sock_path))?;
-    }
+    let _ = std::fs::remove_file(sock_path);
 
     Ok(())
 }

@@ -12,6 +12,7 @@ use anyhow::{Context, Result};
 use chrono::Utc;
 
 use crate::config::Config;
+use crate::ipc;
 use crate::recorder::{Enrichment, Recorder};
 use crate::session::SessionManager;
 use crate::watcher::fs_watcher::FsWatcher;
@@ -21,13 +22,13 @@ use correlation::Correlator;
 use hook_listener::SocketMessage;
 
 /// Standard filesystem locations for daemon artifacts, relative to
-/// `<project>/.vibetracer/`.
+/// `<project>/.aitrace/`.
 fn pid_path(project_path: &std::path::Path) -> PathBuf {
-    project_path.join(".vibetracer").join("daemon.pid")
+    project_path.join(".aitrace").join("daemon.pid")
 }
 
 fn sock_path(project_path: &std::path::Path) -> PathBuf {
-    project_path.join(".vibetracer").join("daemon.sock")
+    project_path.join(".aitrace").join("daemon.sock")
 }
 
 /// Run the daemon process.
@@ -39,8 +40,11 @@ fn sock_path(project_path: &std::path::Path) -> PathBuf {
 /// 4. Enters the main loop processing file changes and socket messages.
 /// 5. Cleans up on shutdown.
 pub fn run_daemon(project_path: PathBuf, config: Config) -> Result<()> {
-    let vt_dir = project_path.join(".vibetracer");
+    let vt_dir = project_path.join(".aitrace");
     std::fs::create_dir_all(&vt_dir)?;
+    if let Err(e) = crate::install::install_project_bin(&project_path) {
+        tracing::warn!("project bin install: {e}");
+    }
 
     // 1. Create a new session.
     let sessions_dir = vt_dir.join("sessions");
@@ -77,6 +81,16 @@ pub fn run_daemon(project_path: PathBuf, config: Config) -> Result<()> {
         }
     });
 
+    // 5b. If this project already has `.claude/`, keep a local PostToolUse
+    // hook in settings.local.json unless committed settings.json already
+    // defines the aitrace handler.
+    let claude_dir = project_path.join(".claude");
+    if claude_dir.is_dir() {
+        if let Err(e) = crate::hook::registration::register_hook(&claude_dir, &project_path) {
+            tracing::warn!("claude hook registration: {e}");
+        }
+    }
+
     // 6. Create correlator and agent registry.
     let mut correlator = Correlator::new();
     let mut agent_registry = AgentRegistry::new();
@@ -88,7 +102,7 @@ pub fn run_daemon(project_path: PathBuf, config: Config) -> Result<()> {
     // We need mutable access to recorder in the loop.
     let mut recorder = recorder;
     let mut edit_count: u64 = 0;
-    let mut subscribers: Vec<std::os::unix::net::UnixStream> = Vec::new();
+    let mut subscribers: Vec<ipc::UnixStream> = Vec::new();
 
     // 7. Main loop.
     loop {
@@ -282,14 +296,45 @@ pub fn start_daemon(project_path: &std::path::Path) -> Result<(i32, String)> {
         .to_str()
         .context("project path is not valid UTF-8")?;
 
-    let child = std::process::Command::new(exe)
-        .arg("--daemon-child")
+    let mut cmd = std::process::Command::new(&exe);
+    cmd.arg("--daemon-child")
         .arg(project_str)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .context("spawn daemon child process")?;
+        .stderr(std::process::Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+        const DETACHED_PROCESS: u32 = 0x0000_0008;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
+        // Prefer breaking out of the parent Job Object so the daemon survives
+        // when the spawning CLI (CI, agent wrappers) is torn down. If the job
+        // forbids breakaway, retry without that flag.
+        cmd.creation_flags(
+            CREATE_NEW_PROCESS_GROUP
+                | DETACHED_PROCESS
+                | CREATE_NO_WINDOW
+                | CREATE_BREAKAWAY_FROM_JOB,
+        );
+    }
+    let child = match cmd.spawn() {
+        Ok(child) => child,
+        Err(_) => {
+            #[cfg(windows)]
+            {
+                use std::os::windows::process::CommandExt;
+                const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+                const DETACHED_PROCESS: u32 = 0x0000_0008;
+                const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+                cmd.creation_flags(
+                    CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS | CREATE_NO_WINDOW,
+                );
+            }
+            cmd.spawn().context("spawn daemon child process")?
+        }
+    };
 
     // We don't wait on the child -- it runs independently.
     drop(child);
@@ -314,9 +359,9 @@ pub fn start_daemon(project_path: &std::path::Path) -> Result<(i32, String)> {
     }
 }
 
-/// Stop a running daemon by sending a stop command over the Unix socket.
+/// Stop a running daemon by sending a stop command over the local socket.
 ///
-/// Falls back to SIGTERM if the daemon doesn't exit within 5 seconds.
+/// Falls back to SIGTERM (Unix) or TerminateProcess (Windows) after 5 seconds.
 pub fn stop_daemon(project_path: &std::path::Path) -> Result<()> {
     let pid_file = pid_path(project_path);
     let sock_file = sock_path(project_path);
@@ -334,11 +379,8 @@ pub fn stop_daemon(project_path: &std::path::Path) -> Result<()> {
         return Ok(());
     }
 
-    // Send stop command over the socket.
-    if sock_file.exists() {
-        if let Ok(mut stream) = std::os::unix::net::UnixStream::connect(&sock_file) {
-            let _ = writeln!(stream, r#"{{"type":"control","command":"stop"}}"#);
-        }
+    if let Ok(mut stream) = ipc::connect(&sock_file) {
+        let _ = writeln!(stream, r#"{{"type":"control","command":"stop"}}"#);
     }
 
     // Poll for the PID file to disappear (up to 5 seconds).
@@ -358,14 +400,11 @@ pub fn stop_daemon(project_path: &std::path::Path) -> Result<()> {
         std::thread::sleep(Duration::from_millis(50));
     }
 
-    // Fallback: send SIGTERM.
     tracing::warn!(
-        "daemon (PID {}) did not stop gracefully, sending SIGTERM",
+        "daemon (PID {}) did not stop gracefully, terminating",
         daemon_pid
     );
-    unsafe {
-        libc::kill(daemon_pid, libc::SIGTERM);
-    }
+    pid::terminate(daemon_pid);
 
     // Wait a bit more for the process to die.
     std::thread::sleep(Duration::from_millis(500));
@@ -391,19 +430,16 @@ pub fn daemon_status(project_path: &std::path::Path) -> Result<String> {
         anyhow::bail!("daemon was not running (cleaned up stale PID file)");
     }
 
-    // Try to get detailed status from the socket.
-    if sock_file.exists() {
-        if let Ok(mut stream) = std::os::unix::net::UnixStream::connect(&sock_file) {
-            stream.set_read_timeout(Some(Duration::from_secs(2))).ok();
-            let _ = writeln!(stream, r#"{{"type":"control","command":"status"}}"#);
+    if let Ok(stream) = ipc::connect(&sock_file) {
+        stream.set_read_timeout(Some(Duration::from_secs(2))).ok();
+        let mut stream = stream;
+        let _ = writeln!(stream, r#"{{"type":"control","command":"status"}}"#);
 
-            let mut response = String::new();
-            if std::io::BufRead::read_line(&mut std::io::BufReader::new(&stream), &mut response)
-                .is_ok()
-                && !response.trim().is_empty()
-            {
-                return Ok(response.trim().to_string());
-            }
+        let mut response = String::new();
+        if std::io::BufRead::read_line(&mut std::io::BufReader::new(&stream), &mut response).is_ok()
+            && !response.trim().is_empty()
+        {
+            return Ok(response.trim().to_string());
         }
     }
 

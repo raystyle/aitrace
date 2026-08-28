@@ -1,7 +1,8 @@
 use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 use std::sync::mpsc;
+
+use crate::ipc::{self, UnixStream};
 
 use anyhow::{Context, Result};
 
@@ -27,24 +28,13 @@ pub enum SocketMessage {
     Stop,
 }
 
-/// Start the Unix socket listener.
+/// Start the local socket listener.
 ///
-/// Binds a `UnixListener` at `sock_path`, then spawns a thread for each
-/// incoming connection. Messages are parsed from newline-delimited JSON and
-/// dispatched to the main loop via `tx`.
-///
-/// This function blocks forever (intended to run in a dedicated thread). It
-/// returns `Ok(())` only if the listener socket is closed externally or an
-/// unrecoverable bind error occurs.
+/// Binds at `sock_path`, then spawns a thread for each incoming connection.
+/// Messages are parsed from newline-delimited JSON and dispatched via `tx`.
 pub fn listen(sock_path: &Path, tx: mpsc::Sender<SocketMessage>) -> Result<()> {
-    // Remove any leftover socket file from a previous run.
-    if sock_path.exists() {
-        std::fs::remove_file(sock_path)
-            .with_context(|| format!("remove stale socket {:?}", sock_path))?;
-    }
-
-    let listener = UnixListener::bind(sock_path)
-        .with_context(|| format!("bind Unix socket at {:?}", sock_path))?;
+    let listener =
+        ipc::bind(sock_path).with_context(|| format!("bind local socket at {:?}", sock_path))?;
 
     // Accept connections in a loop. Each connection is handled in its own thread.
     for stream in listener.incoming() {
@@ -317,7 +307,7 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(100));
 
         // Connect and send a hook message.
-        let mut stream = UnixStream::connect(&sock_path).unwrap();
+        let mut stream = crate::ipc::connect(&sock_path).unwrap();
         writeln!(
             stream,
             r#"{{"type":"hook","agent_id":"test","operation_id":"op-1","tool_name":"Edit","file":"main.rs"}}"#

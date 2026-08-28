@@ -146,7 +146,7 @@ mod tests {
 
     #[test]
     fn save_and_load_roundtrip() {
-        let dir = std::env::temp_dir().join("vibetracer_bookmark_test");
+        let dir = std::env::temp_dir().join("aitrace_bookmark_test");
         let _ = std::fs::create_dir_all(&dir);
         let path = dir.join("bookmarks.json");
 
@@ -169,7 +169,7 @@ mod tests {
 
     #[test]
     fn load_nonexistent_file_returns_error() {
-        let path = PathBuf::from("/tmp/vibetracer_does_not_exist_bookmark.json");
+        let path = PathBuf::from("/tmp/aitrace_does_not_exist_bookmark.json");
         assert!(BookmarkManager::load(&path).is_err());
     }
 

@@ -11,6 +11,8 @@ pub mod event;
 pub mod export;
 pub mod hook;
 pub mod import;
+pub mod install;
+pub mod ipc;
 pub mod mcp;
 pub mod recorder;
 pub mod restore;

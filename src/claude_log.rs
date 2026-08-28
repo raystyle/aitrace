@@ -173,20 +173,38 @@ fn extract_file_path(input: &Value) -> Option<String> {
 
 /// For Edit tools, count lines added/removed from old_string/new_string.
 fn count_edit_lines(input: &Value) -> (Option<u32>, Option<u32>) {
-    let old = input.get("old_string").and_then(|v| v.as_str()).unwrap_or("");
-    let new = input.get("new_string").and_then(|v| v.as_str()).unwrap_or("");
+    let old = input
+        .get("old_string")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let new = input
+        .get("new_string")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     if old.is_empty() && new.is_empty() {
         return (None, None);
     }
-    let old_lines = if old.is_empty() { 0 } else { old.lines().count() as u32 };
-    let new_lines = if new.is_empty() { 0 } else { new.lines().count() as u32 };
+    let old_lines = if old.is_empty() {
+        0
+    } else {
+        old.lines().count() as u32
+    };
+    let new_lines = if new.is_empty() {
+        0
+    } else {
+        new.lines().count() as u32
+    };
     (Some(new_lines), Some(old_lines))
 }
 
 /// For Write tools, count lines from the content field.
 fn count_write_lines(input: &Value) -> (Option<u32>, Option<u32>) {
     if let Some(content) = input.get("content").and_then(|v| v.as_str()) {
-        let lines = if content.is_empty() { 0 } else { content.lines().count() as u32 };
+        let lines = if content.is_empty() {
+            0
+        } else {
+            content.lines().count() as u32
+        };
         (Some(lines), Some(0))
     } else {
         (None, None)
@@ -395,13 +413,9 @@ impl TurnBuilder {
             .map(|(_, idx)| *idx);
 
         if let Some(idx) = idx {
-            let result_content = val
-                .get("content")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let result_content = val.get("content").and_then(|v| v.as_str()).unwrap_or("");
             let tool_name = self.tool_calls[idx].tool_name.clone();
-            self.tool_calls[idx].result_summary =
-                summarize_tool_result(&tool_name, result_content);
+            self.tool_calls[idx].result_summary = summarize_tool_result(&tool_name, result_content);
         }
     }
 
@@ -599,9 +613,7 @@ pub fn tail_log(path: &Path) -> (Vec<ConversationTurn>, mpsc::Receiver<Conversat
     let path_buf = path.to_path_buf();
 
     // Track where we left off -- start after the current file size.
-    let initial_size = fs::metadata(&path_buf)
-        .map(|m| m.len())
-        .unwrap_or(0);
+    let initial_size = fs::metadata(&path_buf).map(|m| m.len()).unwrap_or(0);
 
     thread::spawn(move || {
         let mut offset = initial_size;
@@ -1065,18 +1077,11 @@ mod tests {
             make_human("refactor auth", "2026-03-28T14:00:00Z"),
             make_assistant(
                 "I'll read both files.",
-                &[
-                    ("toolu_1", "Read", "src/auth.rs"),
-                    ("toolu_2", "Grep", ""),
-                ],
+                &[("toolu_1", "Read", "src/auth.rs"), ("toolu_2", "Grep", "")],
                 "2026-03-28T14:00:02Z",
             ),
             make_tool_result("toolu_1", "mod auth { ... }", "2026-03-28T14:00:03Z"),
-            make_tool_result(
-                "toolu_2",
-                "src/main.rs:5:use auth",
-                "2026-03-28T14:00:04Z",
-            ),
+            make_tool_result("toolu_2", "src/main.rs:5:use auth", "2026-03-28T14:00:04Z"),
         ];
         let input = lines.join("\n");
         let turns = parse_lines(input.lines());
@@ -1095,12 +1100,7 @@ mod tests {
         let log_path = dir.path().join("session.jsonl");
         let mut f = fs::File::create(&log_path).unwrap();
 
-        writeln!(
-            f,
-            "{}",
-            make_human("hello", "2026-03-28T14:00:00Z")
-        )
-        .unwrap();
+        writeln!(f, "{}", make_human("hello", "2026-03-28T14:00:00Z")).unwrap();
         writeln!(
             f,
             "{}",
@@ -1151,12 +1151,7 @@ mod tests {
             )
             .unwrap();
             // Write another human message to flush the previous turn
-            writeln!(
-                f,
-                "{}",
-                make_human("trigger flush", "2026-03-28T14:02:00Z")
-            )
-            .unwrap();
+            writeln!(f, "{}", make_human("trigger flush", "2026-03-28T14:02:00Z")).unwrap();
         }
 
         // Wait for the poller to pick it up

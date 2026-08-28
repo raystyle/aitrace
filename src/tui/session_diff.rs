@@ -72,12 +72,14 @@ impl SessionDiff {
             total_added += edit.lines_added;
             total_removed += edit.lines_removed;
 
-            let accum = per_file.entry(edit.file.clone()).or_insert_with(|| FileAccum {
-                edits: 0,
-                lines_added: 0,
-                lines_removed: 0,
-                agents: Vec::new(),
-            });
+            let accum = per_file
+                .entry(edit.file.clone())
+                .or_insert_with(|| FileAccum {
+                    edits: 0,
+                    lines_added: 0,
+                    lines_removed: 0,
+                    agents: Vec::new(),
+                });
             accum.edits += 1;
             accum.lines_added += edit.lines_added;
             accum.lines_removed += edit.lines_removed;

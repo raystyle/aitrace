@@ -1,9 +1,9 @@
+use aitrace::checkpoint::CheckpointManager;
+use aitrace::event::{EditEvent, EditKind};
+use aitrace::snapshot::edit_log::EditLog;
+use aitrace::snapshot::store::SnapshotStore;
 use std::collections::HashMap;
 use tempfile::tempdir;
-use vibetracer::checkpoint::CheckpointManager;
-use vibetracer::event::{EditEvent, EditKind};
-use vibetracer::snapshot::edit_log::EditLog;
-use vibetracer::snapshot::store::SnapshotStore;
 
 // ─── SnapshotStore tests ──────────────────────────────────────────────────────
 
@@ -12,7 +12,7 @@ fn test_store_and_retrieve_content() {
     let dir = tempdir().unwrap();
     let store = SnapshotStore::new(dir.path().to_path_buf());
 
-    let content = b"hello, vibetracer!";
+    let content = b"hello, aitrace!";
     let hash = store.store(content).expect("store content");
 
     // hash must be a 64-char hex string (SHA-256)

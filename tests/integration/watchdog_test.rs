@@ -1,5 +1,5 @@
-use vibetracer::analysis::watchdog::Watchdog;
-use vibetracer::config::WatchdogConstant;
+use aitrace::analysis::watchdog::Watchdog;
+use aitrace::config::WatchdogConstant;
 
 fn earth_radius_rule() -> WatchdogConstant {
     WatchdogConstant {

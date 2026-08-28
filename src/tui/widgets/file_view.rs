@@ -91,17 +91,30 @@ impl Widget for FileView<'_> {
             100
         } else {
             let max_scroll = total_lines.saturating_sub(body_height);
-            if max_scroll == 0 { 100 } else { (scroll.min(max_scroll) * 100) / max_scroll }
+            if max_scroll == 0 {
+                100
+            } else {
+                (scroll.min(max_scroll) * 100) / max_scroll
+            }
         };
 
         // -- Header --
         let header_line = Line::from(vec![
             Span::styled(" ", Style::default()),
-            Span::styled(self.filename, Style::default().fg(theme.fg).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                self.filename,
+                Style::default().fg(theme.fg).add_modifier(Modifier::BOLD),
+            ),
             Span::styled(" \u{2502} ", Style::default().fg(theme.separator)),
-            Span::styled(format!("{} lines", total_lines), Style::default().fg(theme.fg_muted)),
+            Span::styled(
+                format!("{} lines", total_lines),
+                Style::default().fg(theme.fg_muted),
+            ),
             Span::styled(" \u{2502} ", Style::default().fg(theme.separator)),
-            Span::styled(format!("{}%", scroll_pct), Style::default().fg(theme.fg_muted)),
+            Span::styled(
+                format!("{}%", scroll_pct),
+                Style::default().fg(theme.fg_muted),
+            ),
         ]);
         header_line.render(
             Rect {
@@ -116,7 +129,11 @@ impl Widget for FileView<'_> {
         // -- Compute blame data if needed --
         let blame_data = if self.app.blame_visible {
             let filename = self.filename;
-            Some(blame::compute_blame(&self.app.edits, filename, self.app.playhead))
+            Some(blame::compute_blame(
+                &self.app.edits,
+                filename,
+                self.app.playhead,
+            ))
         } else {
             None
         };
@@ -129,7 +146,9 @@ impl Widget for FileView<'_> {
         } else {
             0
         };
-        let content_width = area.width.saturating_sub(GUTTER_WIDTH + 1 + right_col_width);
+        let content_width = area
+            .width
+            .saturating_sub(GUTTER_WIDTH + 1 + right_col_width);
 
         for row_idx in 0..body_height {
             let line_idx = scroll + row_idx; // 0-based index into the file
@@ -172,7 +191,8 @@ impl Widget for FileView<'_> {
                 Color::Reset
             };
             let gutter_text = format!("{:>width$} ", line_num, width = (GUTTER_WIDTH - 1) as usize);
-            let gutter_span = Span::styled(gutter_text, Style::default().fg(gutter_color).bg(gutter_bg));
+            let gutter_span =
+                Span::styled(gutter_text, Style::default().fg(gutter_color).bg(gutter_bg));
 
             // Build the content spans from highlighted segments.
             let hl_line: &HighlightedLine = &highlighted[line_idx];
@@ -230,7 +250,9 @@ impl Widget for FileView<'_> {
                     if let Some(ref blame_map) = blame_data {
                         if let Some(b) = blame_map.get(&line_num) {
                             let text = blame::format_blame(b, col_width as usize);
-                            let agent_idx = b.agent_label.as_ref()
+                            let agent_idx = b
+                                .agent_label
+                                .as_ref()
                                 .map(|label| {
                                     let mut hash: usize = 0;
                                     for byte in label.bytes() {
@@ -239,16 +261,32 @@ impl Widget for FileView<'_> {
                                     hash % theme.agent_colors.len()
                                 })
                                 .unwrap_or(0);
-                            buf.set_string(col_x + 1, y, &text, Style::default().fg(theme.agent_colors[agent_idx]));
+                            buf.set_string(
+                                col_x + 1,
+                                y,
+                                &text,
+                                Style::default().fg(theme.agent_colors[agent_idx]),
+                            );
                         } else {
-                            buf.set_string(col_x + 1, y, "original", Style::default().fg(theme.fg_dim));
+                            buf.set_string(
+                                col_x + 1,
+                                y,
+                                "original",
+                                Style::default().fg(theme.fg_dim),
+                            );
                         }
                     }
                 } else if self.app.annotations_visible && is_changed {
                     if let Some(edit) = self.app.current_edit() {
                         if let Some(ref intent) = edit.operation_intent {
-                            let truncated: String = intent.chars().take(col_width as usize).collect();
-                            buf.set_string(col_x + 1, y, &truncated, Style::default().fg(theme.accent_warm));
+                            let truncated: String =
+                                intent.chars().take(col_width as usize).collect();
+                            buf.set_string(
+                                col_x + 1,
+                                y,
+                                &truncated,
+                                Style::default().fg(theme.accent_warm),
+                            );
                         }
                     }
                 }

@@ -74,13 +74,24 @@ impl PreviewPane<'_> {
         render_at(
             Line::from(vec![
                 Span::styled(" ", Style::default()),
-                Span::styled(edit.file.clone(), Style::default().fg(color_header_value).add_modifier(ratatui::style::Modifier::BOLD)),
+                Span::styled(
+                    edit.file.clone(),
+                    Style::default()
+                        .fg(color_header_value)
+                        .add_modifier(ratatui::style::Modifier::BOLD),
+                ),
                 Span::styled(" \u{2502} ", Style::default().fg(t.separator)),
                 Span::styled("diff", Style::default().fg(t.accent_warm)),
                 Span::styled(" \u{2502} ", Style::default().fg(t.separator)),
-                Span::styled(format!("+{}", edit.lines_added), Style::default().fg(color_add)),
+                Span::styled(
+                    format!("+{}", edit.lines_added),
+                    Style::default().fg(color_add),
+                ),
                 Span::styled(" ", Style::default()),
-                Span::styled(format!("-{}", edit.lines_removed), Style::default().fg(color_remove)),
+                Span::styled(
+                    format!("-{}", edit.lines_removed),
+                    Style::default().fg(color_remove),
+                ),
             ]),
             area,
             row,
@@ -116,12 +127,18 @@ impl PreviewPane<'_> {
             if diff_line.starts_with("@@") {
                 if let Some(minus_pos) = diff_line.find('-') {
                     let after_minus = &diff_line[minus_pos + 1..];
-                    let num_str: String = after_minus.chars().take_while(|c| c.is_ascii_digit()).collect();
+                    let num_str: String = after_minus
+                        .chars()
+                        .take_while(|c| c.is_ascii_digit())
+                        .collect();
                     old_line = num_str.parse::<usize>().unwrap_or(0);
                 }
                 if let Some(plus_pos) = diff_line.find('+') {
                     let after_plus = &diff_line[plus_pos + 1..];
-                    let num_str: String = after_plus.chars().take_while(|c| c.is_ascii_digit()).collect();
+                    let num_str: String = after_plus
+                        .chars()
+                        .take_while(|c| c.is_ascii_digit())
+                        .collect();
                     new_line = num_str.parse::<usize>().unwrap_or(0);
                 }
 
@@ -130,7 +147,9 @@ impl PreviewPane<'_> {
                         Span::styled(format!("{:>5} ", ""), Style::default().fg(t.fg_dim)),
                         Span::styled(diff_line.to_string(), Style::default().fg(color_hunk)),
                     ]),
-                    area, row, buf,
+                    area,
+                    row,
+                    buf,
                 );
                 row += 1;
                 continue;
@@ -156,7 +175,9 @@ impl PreviewPane<'_> {
                     Span::styled(gutter, Style::default().fg(t.fg_dim)),
                     Span::styled(diff_line.to_string(), Style::default().fg(color)),
                 ]),
-                area, row, buf,
+                area,
+                row,
+                buf,
             );
             row += 1;
         }
@@ -205,16 +226,18 @@ fn render_empty_state(area: Rect, buf: &mut Buffer, theme: &crate::theme::Theme)
     }
 
     let logo = [
-        r"        _ _         _                        ",
-        r" __   _(_) |__  ___| |_ _ __ __ _  ___ ___ _ __",
-        r" \_/ |_|_.__/\___|\__|_| \__,_|\___\___|_|  ",
+        r"       _ _",
+        r"  __ _(_) |_ _ __ __ _  ___ ___",
+        r" / _` | | __| '__/ _` |/ __/ _ \",
+        r"| (_| | | |_| | | (_| | (_|  __/",
+        r" \__,_|_|\__|_|  \__,_|\___\___|",
     ];
 
     let hints = [
         ("", ""),
         ("waiting for edits", ""),
         ("", ""),
-        ("start coding in another pane", "vibetracer will"),
+        ("start coding in another pane", "aitrace will"),
         ("track every change automatically", ""),
         ("", ""),
         ("left/right", "scrub through edits"),

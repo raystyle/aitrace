@@ -21,7 +21,7 @@ pub fn export_agent_trace(events: &[EditEvent], _session_id: &str) -> Result<Str
     }
     let output = serde_json::json!({
         "version": "0.1",
-        "generator": "vibetracer",
+        "generator": "aitrace",
         "contributions": contributions,
     });
     serde_json::to_string_pretty(&output).map_err(Into::into)
@@ -88,7 +88,7 @@ mod tests {
         let value: serde_json::Value = serde_json::from_str(&json_str).unwrap();
 
         assert_eq!(value["version"], "0.1");
-        assert_eq!(value["generator"], "vibetracer");
+        assert_eq!(value["generator"], "aitrace");
 
         let contributions = value["contributions"].as_array().unwrap();
         assert_eq!(contributions.len(), 2);

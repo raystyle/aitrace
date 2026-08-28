@@ -1,7 +1,7 @@
+use aitrace::export::agent_trace::export_agent_trace;
+use aitrace::import::AgentImporter;
+use aitrace::import::agent_trace::AgentTraceImporter;
 use tempfile::tempdir;
-use vibetracer::export::agent_trace::export_agent_trace;
-use vibetracer::import::AgentImporter;
-use vibetracer::import::agent_trace::AgentTraceImporter;
 
 #[test]
 fn agent_trace_roundtrip() {
@@ -56,13 +56,13 @@ fn agent_trace_roundtrip() {
     assert_eq!(contribs[1]["operation_id"], "op-2");
 
     // Verify generator tag
-    assert_eq!(parsed["generator"], "vibetracer");
+    assert_eq!(parsed["generator"], "aitrace");
     assert_eq!(parsed["version"], "0.1");
 }
 
 #[test]
 fn claude_import_then_agent_trace_export() {
-    use vibetracer::event::{EditEvent, EditKind};
+    use aitrace::event::{EditEvent, EditKind};
 
     let claude_events = vec![EditEvent {
         id: 1,

@@ -38,7 +38,9 @@ impl<'a> TimelineWidget<'a> {
                 // Agent-level solo filter: only show tracks with edits from this agent.
                 if let Some(ref solo_agent) = self.app.solo_agent {
                     return t.edit_indices.iter().any(|&idx| {
-                        self.app.edits.get(idx)
+                        self.app
+                            .edits
+                            .get(idx)
                             .and_then(|e| e.agent_id.as_ref())
                             .map(|a| a == solo_agent)
                             .unwrap_or(false)
@@ -268,17 +270,17 @@ impl Widget for TimelineWidget<'_> {
                 let max_label = span_len.saturating_sub(1);
                 if max_label > 0 {
                     let label: String = if region.label.len() > max_label {
-                        region.label.chars().take(max_label.saturating_sub(1)).collect::<String>() + "\u{2026}"
+                        region
+                            .label
+                            .chars()
+                            .take(max_label.saturating_sub(1))
+                            .collect::<String>()
+                            + "\u{2026}"
                     } else {
                         region.label.clone()
                     };
                     let lx = bar_x + start as u16;
-                    buf.set_string(
-                        lx,
-                        row,
-                        &label,
-                        Style::default().fg(t.fg).bg(clip_bg),
-                    );
+                    buf.set_string(lx, row, &label, Style::default().fg(t.fg).bg(clip_bg));
                 }
             }
 
@@ -357,7 +359,11 @@ impl Widget for TimelineWidget<'_> {
             let (name_text, name_color) = if track.stale {
                 let display = Self::display_name(&track.filename);
                 let trimmed = display.trim_start();
-                let padded = format!("{:>width$}", format!("{}*", trimmed), width = TRACK_NAME_WIDTH);
+                let padded = format!(
+                    "{:>width$}",
+                    format!("{}*", trimmed),
+                    width = TRACK_NAME_WIDTH
+                );
                 (padded, t.fg_dim)
             } else if is_detached {
                 let display = Self::display_name(&track.filename);
@@ -367,11 +373,15 @@ impl Widget for TimelineWidget<'_> {
             };
 
             // Determine active/flash state for background highlight.
-            let is_active = self.app.current_edit()
+            let is_active = self
+                .app
+                .current_edit()
                 .map(|e| e.file == track.filename)
                 .unwrap_or(false);
 
-            let is_flashing = self.app.track_flash
+            let is_flashing = self
+                .app
+                .track_flash
                 .as_ref()
                 .map(|(f, t)| f == &track.filename && t.elapsed().as_millis() < 300)
                 .unwrap_or(false);
@@ -492,15 +502,12 @@ impl Widget for TimelineWidget<'_> {
 
             // Build the scrub bar: filled before playhead, empty after.
             let filled_char = '\u{2501}'; // heavy horizontal
-            let empty_char = '\u{2500}';  // light horizontal
+            let empty_char = '\u{2500}'; // light horizontal
             let handle_char = "\u{25CF}"; // filled circle as handle
 
             for c in 0..bar_width {
                 if c == playhead_col {
-                    transport_spans.push(Span::styled(
-                        handle_char,
-                        Style::default().fg(ph_color),
-                    ));
+                    transport_spans.push(Span::styled(handle_char, Style::default().fg(ph_color)));
                 } else if c < playhead_col {
                     transport_spans.push(Span::styled(
                         filled_char.to_string(),

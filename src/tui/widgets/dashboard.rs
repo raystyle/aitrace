@@ -1,5 +1,5 @@
 use crate::theme::Theme;
-use crate::tui::widgets::sparkline::{format_sparkline, SparklineBuffer};
+use crate::tui::widgets::sparkline::{SparklineBuffer, format_sparkline};
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -119,10 +119,7 @@ fn bar(filled: usize, total: usize, width: usize) -> (String, String) {
     let fill = (ratio * width as f64).round() as usize;
     let fill = fill.min(width);
     let empty = width - fill;
-    (
-        "\u{2588}".repeat(fill),
-        "\u{2591}".repeat(empty),
-    )
+    ("\u{2588}".repeat(fill), "\u{2591}".repeat(empty))
 }
 
 /// Truncate a string to at most `max_len` characters, appending nothing.
@@ -324,10 +321,7 @@ impl Widget for DashboardPanel<'_> {
 
             let total_files = self.state.file_heat.len();
             let hot = self.state.file_heat.iter().filter(|(_, c)| *c >= 5).count();
-            let header = format!(
-                "FILES   {} touched   {} hot",
-                total_files, hot,
-            );
+            let header = format!("FILES   {} touched   {} hot", total_files, hot,);
             render_at(
                 Line::from(vec![Span::styled(header, muted)]),
                 area,
@@ -336,7 +330,13 @@ impl Widget for DashboardPanel<'_> {
             );
             row += 1;
 
-            let max_edit = self.state.file_heat.first().map(|(_, c)| *c).unwrap_or(1).max(1);
+            let max_edit = self
+                .state
+                .file_heat
+                .first()
+                .map(|(_, c)| *c)
+                .unwrap_or(1)
+                .max(1);
             let bar_width = 10;
             let show = self.state.file_heat.len().min(5);
 
@@ -366,10 +366,7 @@ impl Widget for DashboardPanel<'_> {
             if self.state.file_heat.len() > show && row < max_y {
                 let remaining = self.state.file_heat.len() - show;
                 render_at(
-                    Line::from(vec![Span::styled(
-                        format!("(+{} more)", remaining),
-                        dim,
-                    )]),
+                    Line::from(vec![Span::styled(format!("(+{} more)", remaining), dim)]),
                     area,
                     row,
                     buf,
@@ -414,9 +411,8 @@ impl Widget for DashboardPanel<'_> {
                 let (filled, empty) = bar(*count as usize, max_edit as usize, bar_width);
                 let status = if *active { "aktv" } else { "idle" };
                 let status_style = if *active { green } else { dim };
-                let agent_color = Style::default().fg(
-                    self.theme.agent_colors[i % self.theme.agent_colors.len()],
-                );
+                let agent_color =
+                    Style::default().fg(self.theme.agent_colors[i % self.theme.agent_colors.len()]);
                 render_at(
                     Line::from(vec![
                         Span::styled(padded, agent_color),
@@ -568,14 +564,15 @@ impl Widget for DashboardPanel<'_> {
             if has_data {
                 need!(1);
 
-                let fail_style = if self.state.sentinel_fail > 0 { red } else { fg };
+                let fail_style = if self.state.sentinel_fail > 0 {
+                    red
+                } else {
+                    fg
+                };
                 render_at(
                     Line::from(vec![
                         Span::styled("SENTINELS", muted),
-                        Span::styled(
-                            format!("     {} pass", self.state.sentinel_pass),
-                            green,
-                        ),
+                        Span::styled(format!("     {} pass", self.state.sentinel_pass), green),
                         Span::styled("  ", dim),
                         Span::styled(
                             if self.state.sentinel_fail > 0 {
