@@ -74,12 +74,15 @@ fn build_payload(v: &Value) -> String {
         (Some(tool_use_id), false) => format!("{session_id}:{tool_use_id}"),
         _ => agent_id.clone(),
     };
+    // The transcript backs intent resolution in the daemon.
+    let transcript_path = v.get("transcript_path").and_then(|x| x.as_str());
     json!({
         "type": "hook",
         "agent_id": agent_id,
         "operation_id": operation_id,
         "tool_name": tool_name,
         "file": file,
+        "transcript_path": transcript_path,
     })
     .to_string()
 }

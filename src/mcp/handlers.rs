@@ -129,6 +129,7 @@ impl HandlerContext {
                     "lines_removed": e.lines_removed,
                     "agent_label": e.agent_label,
                     "operation_id": e.operation_id,
+                    "operation_intent": e.operation_intent,
                     "intent": e.intent,
                 })
             })
@@ -309,6 +310,7 @@ impl HandlerContext {
                     "file": e.file,
                     "kind": e.kind,
                     "patch": e.patch,
+                    "operation_intent": e.operation_intent,
                     "intent": e.intent,
                 })
             })

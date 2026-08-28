@@ -26,7 +26,14 @@ pub struct HookPayload {
     pub agent_id: String,
     pub operation_id: String,
     pub tool_name: String,
+    /// Operation intent: what the agent said it was doing. Resolved by the
+    /// daemon from the transcript when the hook itself does not carry one.
     pub intent: Option<String>,
+    /// User-level intent: the user prompt active when the edit happened.
+    /// Daemon-resolved from the transcript.
+    pub user_intent: Option<String>,
+    /// Claude Code transcript file the operation came from.
+    pub transcript_path: Option<String>,
 }
 
 /// A payload with an arrival timestamp so we can expire stale entries.
@@ -136,6 +143,8 @@ mod tests {
             operation_id: op.to_string(),
             tool_name: tool.to_string(),
             intent: None,
+            user_intent: None,
+            transcript_path: None,
         }
     }
 

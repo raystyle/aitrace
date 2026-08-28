@@ -26,6 +26,7 @@ pub struct Enrichment {
     pub agent_label: Option<String>,
     pub operation_id: Option<String>,
     pub operation_intent: Option<String>,
+    pub intent: Option<String>,
     pub tool_name: Option<String>,
     pub restore_id: Option<u64>,
 }
@@ -152,6 +153,7 @@ impl Recorder {
             edit.agent_label = enrich.agent_label.clone();
             edit.operation_id = enrich.operation_id.clone();
             edit.operation_intent = enrich.operation_intent.clone();
+            edit.intent = enrich.intent.clone();
             edit.tool_name = enrich.tool_name.clone();
             edit.restore_id = enrich.restore_id;
         }
@@ -280,6 +282,7 @@ mod tests {
             agent_label: Some("claude-1".to_string()),
             operation_id: Some("op-7".to_string()),
             operation_intent: Some("refactor auth".to_string()),
+            intent: Some("fix the login flow".to_string()),
             tool_name: Some("Edit".to_string()),
             restore_id: Some(99),
         };
@@ -296,6 +299,7 @@ mod tests {
             result.event.operation_intent,
             Some("refactor auth".to_string())
         );
+        assert_eq!(result.event.intent, Some("fix the login flow".to_string()));
         assert_eq!(result.event.tool_name, Some("Edit".to_string()));
         assert_eq!(result.event.restore_id, Some(99));
     }

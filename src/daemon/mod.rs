@@ -1,6 +1,7 @@
 pub mod agent_registry;
 pub mod correlation;
 pub mod hook_listener;
+pub mod intent_index;
 pub mod pid;
 
 use std::io::Write;
@@ -91,9 +92,10 @@ pub fn run_daemon(project_path: PathBuf, config: Config) -> Result<()> {
         }
     }
 
-    // 6. Create correlator and agent registry.
+    // 6. Create correlator, agent registry, and transcript intent index.
     let mut correlator = Correlator::new();
     let mut agent_registry = AgentRegistry::new();
+    let mut intent_index = intent_index::IntentIndex::new();
 
     // Channel for sending EditEvents (Recorder requires one, but the daemon
     // doesn't consume them through the channel -- it uses them inline).
@@ -114,6 +116,7 @@ pub fn run_daemon(project_path: PathBuf, config: Config) -> Result<()> {
                 correlator: &mut correlator,
                 agent_registry: &mut agent_registry,
                 subscribers: &mut subscribers,
+                intent_index: &mut intent_index,
             };
             while let Ok(msg) = sock_rx.try_recv() {
                 if handle_socket_message(
@@ -164,6 +167,7 @@ pub fn run_daemon(project_path: PathBuf, config: Config) -> Result<()> {
                                 correlator: &mut correlator,
                                 agent_registry: &mut agent_registry,
                                 subscribers: &mut subscribers,
+                                intent_index: &mut intent_index,
                             };
                             while let Ok(msg) = sock_rx.try_recv() {
                                 if handle_socket_message(
@@ -198,6 +202,7 @@ pub fn run_daemon(project_path: PathBuf, config: Config) -> Result<()> {
                         agent_label: label,
                         operation_id: Some(hook.operation_id),
                         operation_intent: hook.intent,
+                        intent: hook.user_intent,
                         tool_name: Some(hook.tool_name),
                         restore_id: None,
                     }
@@ -276,6 +281,7 @@ struct LoopState<'a> {
     correlator: &'a mut Correlator,
     agent_registry: &'a mut AgentRegistry,
     subscribers: &'a mut Vec<ipc::UnixStream>,
+    intent_index: &'a mut intent_index::IntentIndex,
 }
 
 /// Handle one socket message.
@@ -293,12 +299,27 @@ fn handle_socket_message(
     project_path: &std::path::Path,
 ) -> bool {
     match msg {
-        SocketMessage::Hook(payload, file) => {
+        SocketMessage::Hook(mut payload, file) => {
             // Register or update the agent.
             let ts = Utc::now().timestamp_millis();
             state
                 .agent_registry
                 .register_or_update(&payload.agent_id, "claude-code", ts);
+            // Resolve intents from the transcript: the tool-use entry is
+            // written before the tool runs, so the index sees it by now.
+            if let Some(tp) = payload.transcript_path.as_deref() {
+                state.intent_index.refresh(std::path::Path::new(tp));
+                if payload.intent.is_none() {
+                    if let Some(tool_use_id) =
+                        intent_index::tool_use_id_from_operation(&payload.operation_id)
+                    {
+                        payload.intent = state.intent_index.operation_intent(tool_use_id);
+                    }
+                }
+                if payload.user_intent.is_none() {
+                    payload.user_intent = state.intent_index.user_prompt();
+                }
+            }
             // Push enrichment for correlation. Hooks report absolute
             // paths while watcher events are project-relative, so both
             // sides are normalized to the same canonical key.

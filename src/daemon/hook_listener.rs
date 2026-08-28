@@ -126,6 +126,14 @@ fn parse_message(json_str: &str, stream: Option<UnixStream>) -> Result<SocketMes
                 .get("intent")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
+            let user_intent = value
+                .get("user_intent")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let transcript_path = value
+                .get("transcript_path")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
 
             Ok(SocketMessage::Hook(
                 HookPayload {
@@ -133,6 +141,8 @@ fn parse_message(json_str: &str, stream: Option<UnixStream>) -> Result<SocketMes
                     operation_id,
                     tool_name,
                     intent,
+                    user_intent,
+                    transcript_path,
                 },
                 file,
             ))
